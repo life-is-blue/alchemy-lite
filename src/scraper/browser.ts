@@ -3,10 +3,11 @@
  * Philosophy: Use sparingly, clean up aggressively
  */
 
-import puppeteer, { Browser, Page } from 'puppeteer';
+import { Browser, Page } from 'puppeteer';
 import { logger } from '../logger.js';
 import { cleanHtml } from '../lib/clean-html.js';
 import { parseMarkdown } from '../lib/html-to-markdown.js';
+import { getGlobalBrowserPool } from './browser-pool.js';
 
 export interface BrowserOptions {
   url: string;
@@ -54,23 +55,13 @@ export async function fetchAndParseWithBrowser(options: BrowserOptions): Promise
 
   logger.debug('Fetching URL with headless browser', { url });
 
+  const pool = getGlobalBrowserPool();
   let browser: Browser | null = null;
   let page: Page | null = null;
 
   try {
-    // Launch browser with minimal resources
-    browser = await puppeteer.launch({
-      headless: true,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-gpu',
-        '--disable-software-rasterizer',
-        '--disable-extensions',
-      ],
-    });
-
+    // Acquire browser from pool (with wait if needed)
+    browser = await pool.acquire();
     page = await browser.newPage();
 
     // Set a reasonable viewport
@@ -109,6 +100,8 @@ export async function fetchAndParseWithBrowser(options: BrowserOptions): Promise
     return { html: cleanedHtml, markdown };
   } finally {
     await page?.close();
-    await browser?.close();
+    if (browser) {
+      await pool.release(browser);
+    }
   }
 }

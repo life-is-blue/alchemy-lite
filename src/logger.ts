@@ -10,8 +10,13 @@ class Logger {
 
   private format(level: LogLevel, message: string, meta?: any): string {
     const timestamp = new Date().toISOString();
-    const metaStr = meta ? ` ${JSON.stringify(meta)}` : '';
-    return `[${timestamp}] [${level.toUpperCase()}] ${message}${metaStr}`;
+    const logEntry = {
+      timestamp,
+      level: level.toUpperCase(),
+      message,
+      ...(meta || {}),
+    };
+    return JSON.stringify(logEntry);
   }
 
   info(message: string, meta?: any): void {
