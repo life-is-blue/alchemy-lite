@@ -3,10 +3,6 @@ main:
     - services:
         - docker
       docker:
-        image: docker.cnb.cool/arsrna/dev-env/node20
-        volumes:
-          - /root/.npm:cow
-          - ./node_modules
       stages:
         - name: 安装&&构建
           script:
