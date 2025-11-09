@@ -7,8 +7,6 @@ main:
         image: node:20           # 与本地构建一致（这里可以保留，但构建镜像阶段主要靠Dockerfile）
         volumes:
           - /root/.npm:copy-on-write   # 复用 npm 缓存
-      env:
-        NODE_ENV: production
       stages:
         - name: install deps
           script: npm ci
