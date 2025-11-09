@@ -1,0 +1,40 @@
+main:
+  push:
+    - name: firecrawl-lite-main
+      runner:
+        cpus: 4                  # 按需调整，可选
+      docker:
+        image: node:20           # 与本地构建一致（这里可以保留，但构建镜像阶段主要靠Dockerfile）
+        volumes:
+          - /root/.npm:copy-on-write   # 复用 npm 缓存
+      env:
+        NODE_ENV: production
+      stages:
+        - name: install deps
+          script: npm ci
+        - name: unit tests
+          script: npm test
+        - name: build
+          script: npm run build
+        - name: package dist
+          script: |
+            ls dist
+            tar -czf firecrawl-lite-dist.tar.gz dist
+        # 新增：构建Docker镜像阶段
+        - name: docker build
+          script: |
+            # 打标签，这里用提交哈希更准确，也可以用latest
+            IMAGE_TAG="${CNB_REPO_SLUG_LOWERCASE}:${CNB_COMMIT}"
+            docker build -t $IMAGE_TAG .
+        # 新增：推送镜像到CNB Docker制品库
+        - name: docker push
+          script: |
+            if [ -f firecrawl-lite-dist.tar.gz ]; then
+              IMAGE_TAG="${CNB_REPO_SLUG_LOWERCASE}:${CNB_COMMIT}"
+              echo "artifact ready: firecrawl-lite-dist.tar.gz"
+              # 这里替换成实际的上传命令，比如oss/制品库等
+              # 参考文档2的示例，CNB流水线内置了登录凭据，可以直接用${CNB_TOKEN_USER_NAME}和${CNB_TOKEN}
+              # 如果是推送到CNB制品库，可能不需要额外登录，直接push即可
+              docker push $IMAGE_TAG
+            fi
+ 
