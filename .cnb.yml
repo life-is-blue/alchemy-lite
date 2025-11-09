@@ -8,37 +8,20 @@ main:
       env:
         IMAGE_TAG_BASE: ${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}
       stages:
-        - name: strip husky prepare
-          script: |
-            set -e
-            if grep -q '"prepare"' package.json; then
-              echo "Temporarily removing scripts.prepare to skip husky during Docker build"
-              cp package.json package.json.ci.backup
-              node - <<'EOF'
-const fs = require('fs');
-const path = 'package.json';
-const pkg = JSON.parse(fs.readFileSync(path, 'utf8'));
-if (pkg.scripts && pkg.scripts.prepare) {
-  delete pkg.scripts.prepare;
-  fs.writeFileSync(path, JSON.stringify(pkg, null, 2) + '\n');
-}
-EOF
-            else
-              echo "scripts.prepare not found, nothing to strip."
-            fi
         - name: docker login
           image: docker:24-cli
           script: |
             set -e
             docker login -u "${CNB_TOKEN_USER_NAME}" -p "${CNB_TOKEN}" "${CNB_DOCKER_REGISTRY}"
+
         - name: docker build
           image: docker:24-cli
           script: |
             set -e
             TAG_SUFFIX="${CNB_COMMIT_SHA:-${CNB_COMMIT:-latest}}"
             IMAGE_TAG="${IMAGE_TAG_BASE}:${TAG_SUFFIX}"
-            echo "Building ${IMAGE_TAG}"
             docker build -t "${IMAGE_TAG}" .
+
         - name: docker push
           image: docker:24-cli
           script: |
@@ -49,25 +32,3 @@ EOF
             docker tag "${IMAGE_TAG}" "${LATEST_TAG}"
             docker push "${IMAGE_TAG}"
             docker push "${LATEST_TAG}"
-        - name: deploy to vm
-          image: tencentcom/ssh
-          imports: https://cnb.cool/<team>/<secret-repo>/-/blob/main/firecrawl-lite-ssh.yml
-          settings:
-            host: $REMOTE_HOST
-            port: $REMOTE_PORT
-            username: $REMOTE_USERNAME
-            key: $PRIVATE_KEY
-            script:
-              - docker pull ${IMAGE_TAG_BASE}:latest
-              - docker stop firecrawl-lite || true
-              - docker rm firecrawl-lite || true
-              - docker run -d -p 80:3000 --name firecrawl-lite --restart=always ${IMAGE_TAG_BASE}:latest
-              - docker ps
-      endStages:
-        - name: restore package.json
-          allowFailure: true
-          script: |
-            set -e
-            if [ -f package.json.ci.backup ]; then
-              mv package.json.ci.backup package.json
-            fi
