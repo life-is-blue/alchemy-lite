@@ -1,34 +1,19 @@
 main:
   push:
-    - name: docker-build-and-deploy
-      docker:
-        image: node:20
-      services:
+    - services:
         - docker
-      env:
-        IMAGE_TAG_BASE: ${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}
+      docker:
+        image: docker.cnb.cool/arsrna/dev-env/node20
+        volumes:
+          - /root/.npm:cow
+          - ./node_modules
       stages:
-        - name: docker login
-          image: docker:24-cli
-          script: |
-            set -e
-            docker login -u "${CNB_TOKEN_USER_NAME}" -p "${CNB_TOKEN}" "${CNB_DOCKER_REGISTRY}"
-
+        - name: 安装&&构建
+          script:
+            - npm ci
+            - npm run build
+        # 同名镜像构建&推送
         - name: docker build
-          image: docker:24-cli
-          script: |
-            set -e
-            TAG_SUFFIX="${CNB_COMMIT_SHA:-${CNB_COMMIT:-latest}}"
-            IMAGE_TAG="${IMAGE_TAG_BASE}:${TAG_SUFFIX}"
-            docker build -t "${IMAGE_TAG}" .
-
+          script: docker build -t ${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}:latest .
         - name: docker push
-          image: docker:24-cli
-          script: |
-            set -e
-            TAG_SUFFIX="${CNB_COMMIT_SHA:-${CNB_COMMIT:-latest}}"
-            IMAGE_TAG="${IMAGE_TAG_BASE}:${TAG_SUFFIX}"
-            LATEST_TAG="${IMAGE_TAG_BASE}:latest"
-            docker tag "${IMAGE_TAG}" "${LATEST_TAG}"
-            docker push "${IMAGE_TAG}"
-            docker push "${LATEST_TAG}"
+          script: docker push ${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}:latest
