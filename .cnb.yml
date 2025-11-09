@@ -5,33 +5,41 @@ main:
       docker:
         image: node:20
       stages:
-        - name: 安装&&构建&&测试
-          script:
-            - npm ci
-            - npm test
-            - npm run build
-
-        - name: docker build
-          script: docker build -t ${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}:latest .
-
-        - name: docker push
-          script: docker push ${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}:latest
-
+        - name: build
+          script: |
+            set -eu
+            npm ci
+            npm test
+            npm run build
+        - name: build-and-push-image
+          image: docker:24-cli
+          script: |
+            set -eu
+            IMAGE_TAG="${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}:${CI_COMMIT_SHA}"
+            LATEST_TAG="${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}:latest"
+            docker login -u "${CNB_TOKEN_USER_NAME}" -p "${CNB_TOKEN}" "${CNB_DOCKER_REGISTRY}"
+            docker pull "${LATEST_TAG}" || true
+            export DOCKER_BUILDKIT=1
+            docker build --cache-from "${LATEST_TAG}" -t "${IMAGE_TAG}" .
+            docker tag "${IMAGE_TAG}" "${LATEST_TAG}"
+            docker push "${IMAGE_TAG}"
+            docker push "${LATEST_TAG}"
         - name: deploy to vm
           image: tencentcom/ssh
           imports: https://cnb.cool/ai-alchemy-factory/project-secrets/-/blob/main/firecrawl-lite-ssh.yml
-          settings:
-            host: $REMOTE_HOST
-            port: $REMOTE_PORT
-            username: $REMOTE_USERNAME
-            key: $PRIVATE_KEY
-            script:
-              - docker login -u $REGISTRY_USER -p $REGISTRY_TOKEN docker.cnb.cool || exit 1
-              - docker pull docker.cnb.cool/ai-alchemy-factory/firecrawl-lite:latest || exit 1
-              - docker stop firecrawl-lite || true
-              - docker rm firecrawl-lite || true
-              - docker run -d -p 80:3000 --name firecrawl-lite --restart=always docker.cnb.cool/ai-alchemy-factory/firecrawl-lite:latest || exit 1
-              - sleep 3
-              - docker ps | grep -q firecrawl-lite || exit 1
-              - docker logs firecrawl-lite || true
-              - docker exec firecrawl-lite curl -f http://localhost:3000/health || exit 1
+          script: |
+            set -eu
+            docker login -u "${REGISTRY_USER}" -p "${REGISTRY_TOKEN}" docker.cnb.cool
+            docker pull docker.cnb.cool/ai-alchemy-factory/firecrawl-lite:latest
+            docker stop firecrawl-lite || true
+            docker rm firecrawl-lite || true
+            docker run -d -p 80:3000 --name firecrawl-lite --restart=always docker.cnb.cool/ai-alchemy-factory/firecrawl-lite:latest
+            for _ in $(seq 1 10); do
+              if curl -fsS http://127.0.0.1:80/health; then
+                echo "Health check passed."
+                exit 0
+              fi
+              sleep 3
+            done
+            echo "Health check failed after multiple attempts." >&2
+            exit 1
