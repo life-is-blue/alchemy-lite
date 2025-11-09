@@ -51,7 +51,7 @@ async function clickAllTabs(page: Page): Promise<void> {
  * WARNING: This is resource-intensive. Use only when necessary.
  */
 export async function fetchAndParseWithBrowser(options: BrowserOptions): Promise<BrowserResult> {
-  const { url, timeout = 30000, autoClickTabs = true } = options;
+  const { url, timeout = 30000, autoClickTabs = false } = options;
 
   logger.debug('Fetching URL with headless browser', { url });
 
