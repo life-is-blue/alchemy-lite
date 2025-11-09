@@ -15,6 +15,8 @@ main:
           image: docker:24-cli
           script: |
             set -eu
+            IMAGE_TAG="${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}:$(date +%Y%m%d%H%M%S)-$(git rev-parse --short HEAD)"
+            LATEST_TAG="${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}:latest"
             docker login -u "${CNB_TOKEN_USER_NAME}" -p "${CNB_TOKEN}" "${CNB_DOCKER_REGISTRY}"
             docker pull "${LATEST_TAG}" || true
             export DOCKER_BUILDKIT=1
