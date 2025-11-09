@@ -2,6 +2,39 @@
 
 Production-ready web scraper. 933 lines. Does one thing well.
 
+## Philosophy
+
+Inspired by Unix philosophy and Linus Torvalds' principles:
+- **Do one thing well**: Convert URLs to clean text
+- **Minimal dependencies**: Only essential packages
+- **Synchronous, predictable behavior**: No hidden concurrency surprises
+- **Explicit performance trade-offs**: Browser rendering takes 5s, HTTP takes 170ms—you choose
+
+## Architecture at a Glance
+
+**Dual-engine design**:
+- **Lightweight**: Direct HTTP fetch + Cheerio HTML parsing (~170ms per page)
+- **Heavyweight**: Puppeteer browser rendering for JS-heavy sites (~5s avg)
+
+**Core components**:
+```
+scraper/
+├── fetch.ts         # Lightweight engine: undici HTTP + cheerio
+├── browser.ts       # Heavyweight engine: Puppeteer
+└── browser-pool.ts  # Concurrency control (default: 5 browsers)
+
+crawler/
+└── index.ts         # Recursive DFS crawler with domain filtering
+```
+
+**Key design decisions**:
+- Recursive synchronous crawling (simplicity over throughput)
+- Browser pooling prevents resource exhaustion
+- Resource blocking enabled by default (faster rendering)
+- Tab clicking disabled by default (adds 3-5s, only for dynamic React tabs)
+- URL deduplication removes `#` and `?` before storage
+- Domain filtering: crawler respects domain boundaries
+
 ## Quick Start
 
 ```bash
@@ -71,6 +104,34 @@ API_KEY=                 # Optional auth (leave empty to disable)
 - Static HTML: ~170ms (recommended for most sites)
 - JavaScript sites: ~5s avg (use only when needed)
 - Test first: most content is available without JS rendering
+
+## API
+
+**POST /scrape** - Convert URL to Markdown
+```json
+{"url": "https://example.com", "renderJS": false, "autoClickTabs": false}
+```
+
+**POST /crawl** - Recursive crawl with limits
+```json
+{"url": "https://example.com", "maxDepth": 2, "maxPages": 10}
+```
+
+**GET /health** - Health check
+
+See **FRONTEND.md** for integration patterns and client-side best practices.
+
+## Troubleshooting (Quick Reference)
+
+| Problem | Quick Fix |
+|---------|-----------|
+| Responses slow | Use `renderJS: false` (170ms vs 5s) |
+| Memory growing | Restart daily, reduce `MAX_BROWSERS` |
+| Queue building up | Increase `MAX_BROWSERS`, or reduce request rate |
+| Website blocks us | Not our bug. Website anti-bot protection. |
+| Missing content | Try `renderJS: true` then `autoClickTabs: true` |
+
+See **DEPLOY.md** for detailed troubleshooting guide.
 
 ## Known Limitations
 
