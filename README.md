@@ -41,6 +41,19 @@ MAX_CRAWL_PAGES=50       # Total pages limit
 API_KEY=                 # Optional auth (leave empty to disable)
 ```
 
+## Performance Notes
+
+**Tab Clicking** (`autoClickTabs`): Disabled by default
+- Only helps with dynamically-rendered tabs (Headless UI, React components)
+- CSS-hidden tabs (like Moonshot API docs) don't benefit
+- Adds 3-5 seconds per request with minimal content gain
+- Set `autoClickTabs: true` if testing reveals hidden content
+
+**Browser Rendering** (`renderJS`):
+- Static HTML: ~170ms (recommended for most sites)
+- JavaScript sites: ~5s avg (use only when needed)
+- Test first: most content is available without JS rendering
+
 ## Known Limitations
 
-**Dynamic Tabs**: Sites using lazy-rendered tabs (React Headless UI, etc.) only capture the active tab. This is a frontend design choice. Use raw APIs for complete documentation.
+**Dynamic Tabs**: Sites using lazy-rendered tabs (React Headless UI, etc.) need `autoClickTabs: true` to capture all tabs. CSS-hidden tabs are automatically included.
