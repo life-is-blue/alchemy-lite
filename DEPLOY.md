@@ -211,38 +211,248 @@ tail -f app.log | grep '"activeCount":5'
 
 ---
 
-## Common Issues
+## Troubleshooting
 
-### Issue: "Chrome not found"
+### Symptom: Browser Pool Exhausted (Queue Building Up)
 
-**Solution**:
+**Signs**:
+- Response times exceed 30+ seconds
+- New requests wait indefinitely
+- Error rate increases
+
+**Root cause**: Too many concurrent requests for available browsers.
+
+**Diagnosis** (here's the real check):
+
+⚠️ **Note**: Debug logs only appear if `NODE_ENV != 'production'`. For production environments, ensure logging is enabled or check application-level metrics.
+
 ```bash
-npm install --save-optional puppeteer
-# Or use existing Chromium from system
-export PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+# Count browsers being created vs released
+# Run while traffic is happening (must have debug logs enabled):
+acquired=$(grep -c '"message":"Browser acquired"' app.log)
+released=$(grep -c '"message":"Browser released"' app.log)
+echo "Acquired: $acquired, Released: $released, Diff: $((acquired - released))"
+
+# Example output:
+# Acquired: 150, Released: 148, Diff: 2  ← Normal (queue exists, but small)
+# Acquired: 50, Released: 5, Diff: 45   ← Problem (browsers not releasing)
 ```
 
-### Issue: "Memory keeps growing"
+**Solutions** (in order):
+1. **If acquired >> released** → Browsers aren't closing (bug in code)
+   - Check `src/scraper/browser.ts` — verify `browser.close()` in finally block
+   - This is a code issue, not a deployment issue
 
-**Solution**:
-- Check browser pool: Browsers not releasing?
-- Increase swap space
-- Reduce MAX_BROWSERS
-- Restart service daily (cron job)
+2. **If acquired ≈ released** → Pool is legitimately full
+   - Reduce request rate on client side (rate limiting: 2 req/sec)
+   - OR increase `MAX_BROWSERS` if memory allows
+   ```bash
+   MAX_BROWSERS=8  # Up from default 5 (each browser ~100MB)
+   ```
 
-### Issue: "Timeout errors increasing"
+3. **For immediate relief**:
+   - Disable `autoClickTabs` on client side (saves 3-5s per request)
+   - This frees up browsers faster
 
-**Solution**:
-- Increase timeout: `timeout: 60000`
-- Check network connectivity
-- Website may be blocking automation
+---
 
-### Issue: "High latency"
+### Symptom: Memory Keeps Growing
 
-**Solution**:
-- Reduce MAX_BROWSERS if queue is long
-- Disable autoClickTabs if not needed
-- Use renderJS: false for static content
+**Signs**:
+- RSS memory grows over hours
+- Eventually hits OOM and crashes
+- Recovers after restart
+
+**Root causes**:
+1. Browsers not releasing (memory leak in browser.ts)
+2. HTML being stored (especially large pages)
+3. Too many concurrent heavy requests
+
+**Diagnosis**:
+```bash
+# Monitor memory in real-time
+watch -n 1 'ps aux | grep node'
+
+# Check for "Browser released" in logs
+tail -f app.log | grep 'Browser released' | wc -l
+# Count should increase over time
+```
+
+**Solutions**:
+1. **Verify browser cleanup** (check `src/scraper/browser.ts` finally block)
+   - Make sure `browser.close()` is always called
+   - If missing, that's a bug — report it
+
+2. **Set limits on crawl**:
+   ```bash
+   MAX_CRAWL_PAGES=50   # Don't crawl entire internet
+   ```
+
+3. **Restart service daily** (temporary workaround)
+   ```bash
+   # Add cron job
+   0 3 * * * systemctl restart firecrawl
+   ```
+
+---
+
+### Symptom: Timeout Errors Frequent
+
+**Signs**:
+- Many requests fail with "Timeout"
+- Error rate > 5%
+
+**Root causes** (need to distinguish):
+1. Network is genuinely slow
+2. Server is overloaded (pool exhausted)
+3. Website intentionally slow/blocking
+
+**Diagnosis** (key step):
+```bash
+# Simple grep: check which domains are timing out
+grep 'Timeout' app.log | head -10
+# Then look manually at the URLs to spot patterns
+
+# More sophisticated approach (if logs are JSON):
+# Automatic pattern detection
+grep 'Timeout' app.log | jq -r '.url' 2>/dev/null | sort | uniq -c
+
+# Example output (showing pattern):
+#  3 https://slow-api.example.com/docs ← Same domain repeatedly
+#  1 https://github.com/user/repo
+#  1 https://docs.other.com
+# → Interpretation: slow-api times out consistently (website issue)
+```
+
+Then check pool health:
+```bash
+# See if browsers are stuck
+acquired=$(grep -c 'Browser acquired' app.log); \
+released=$(grep -c 'Browser released' app.log); \
+echo "Acquired: $acquired, Released: $released"
+# If gap is large, see "Browser Pool Exhausted" above
+```
+
+**Solutions**:
+1. **If same domain times out repeatedly** → website is slow or blocking
+   ```bash
+   # Increase timeout for that URL only
+   timeout: 60000  # Up from default 30000
+   ```
+   Or accept that you can't scrape it.
+
+2. **If random domains time out** → server overloaded
+   - See "Browser Pool Exhausted" above
+   - Reduce client-side concurrency
+
+3. **If one per minute at baseline** → normal, ignore
+   - Some URLs are just slow
+   - Increase timeout slightly (45000ms)
+
+---
+
+### Symptom: Website Returns 403 or 429
+
+**Signs**:
+- Specific websites return HTTP 403 (Forbidden) or 429 (Too Many Requests)
+- Other sites work fine
+
+**What's actually happening**:
+The website detected a pattern of requests (you're clearly automation) and started rejecting you. This is **working as designed** — the website is protecting itself.
+
+**How to detect if this is the issue**:
+```bash
+# Test manually with curl
+curl -I https://example.com
+# If returns 403: website is blocking something about the request
+
+# Check our User-Agent
+curl -I -A 'Mozilla/5.0' https://example.com
+# If this works but our tool doesn't: User-Agent is flagged as bot
+```
+
+**Can we fix it**?
+- **Not in this tool** (would require User-Agent rotation, per-request delays, proxy support)
+- **On your client**: Implement delays between requests (1-2 seconds minimum)
+
+**Workarounds**:
+1. **Lower request frequency** (client-side rate limit)
+   ```bash
+   # Max 1 request per 2 seconds to that site
+   # This reduces bot detection signals
+   ```
+
+2. **Accept the limitation**: Some sites cannot be scraped (by design).
+   - News sites, payment pages, account-protected content
+   - This is **expected behavior**
+
+---
+
+### Symptom: Crawl Doesn't Complete All Pages
+
+**Signs**:
+- Crawl stops early or misses some links
+- Fewer pages than expected in results
+
+**Root causes**:
+1. Hit `maxDepth` limit
+2. Hit `maxPages` limit
+3. Links are JavaScript-rendered (not in initial HTML)
+4. Links are behind navigation (need clicking)
+
+**Diagnosis**:
+```bash
+# Check logs for "Max depth reached" or "Max pages reached"
+tail -f app.log | grep 'Max'
+
+# Check request parameters
+# If renderJS: false, dynamic content won't be found
+```
+
+**Solutions**:
+1. **Increase limits** (if reasonable)
+   ```bash
+   maxDepth: 4    # Up from 3
+   maxPages: 100  # Up from 50
+   ```
+
+2. **Enable JS rendering** (if links are dynamic)
+   ```bash
+   renderJS: true
+   autoClickTabs: true  # Only if links are in hidden tabs
+   ```
+
+3. **Accept the limitation**: Website structure may not support crawling.
+
+---
+
+### Symptom: High Latency (Slow Responses)
+
+**Signs**:
+- Requests take 30+ seconds even for simple pages
+- p95 latency > 10 seconds
+
+**Root causes**:
+1. `renderJS: true` by default (5s overhead)
+2. `autoClickTabs: true` (3-5s overhead)
+3. Browser pool saturation
+
+**Solutions**:
+1. **Disable autoClickTabs** (unless content is hidden)
+   ```bash
+   autoClickTabs: false  # Default
+   ```
+
+2. **Use renderJS: false for static sites**
+   ```bash
+   # Try this first (170ms)
+   renderJS: false
+   
+   # Only use true if content is missing
+   renderJS: true  # ~5s
+   ```
+
+3. **If pool is saturated**, see "Browser Pool Exhausted" above.
 
 ---
 
