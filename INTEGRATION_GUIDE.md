@@ -50,7 +50,7 @@ Request:
   "url": "https://example.com",
   "renderJS": false,
   "timeout": 30000,
-  "autoClickTabs": true
+  "autoClickTabs": false
 }
 ```
 
@@ -68,11 +68,12 @@ Response:
 - `url` (required): URL to scrape
 - `renderJS` (boolean): Use Puppeteer for JS rendering. Default: `false`
 - `timeout` (number): Timeout in ms. Default: `30000`
-- `autoClickTabs` (boolean): Auto-click tabs for dynamic content. Default: `true`
+- `autoClickTabs` (boolean): Click dynamic tabs. Only needed for Headless UI components. Default: `false`
 
 **Response times:**
 - Static HTML: ~170ms
 - JS rendered: ~5000ms (includes browser startup)
+- With tab clicking: +3-5 seconds (only if needed)
 
 ---
 
@@ -290,14 +291,32 @@ await scrape({ url, timeout: 10000 });
 await scrape({ url, timeout: 60000 });
 ```
 
-### Tip 4: Disable auto-click tabs if not needed
+### Tip 4: Only use autoClickTabs if hidden content is missing
 ```javascript
+// Default: faster (no tab clicking)
 await scrape({
   url,
   renderJS: true,
-  autoClickTabs: false  // Save ~1-2 seconds
+  autoClickTabs: false  // 3.2 seconds
+});
+
+// If content is incomplete, try this:
+await scrape({
+  url,
+  renderJS: true,
+  autoClickTabs: true   // +3-5 seconds, only for Headless UI
 });
 ```
+
+**When to use `autoClickTabs: true`:**
+- React Headless UI components
+- Vue dynamic tabs that delete DOM on deactivation
+- Sites where content is truly hidden (not CSS-hidden)
+
+**When NOT to use:**
+- CSS-hidden tabs (all content is in DOM)
+- API documentation sites (like Moonshot)
+- Most traditional websites
 
 ---
 
