@@ -1,79 +1,15 @@
-$:
-  vscode:
+main:
+  push:
     - services:
-        - vscode
         - docker
-      docker:
-        image: docker.cnb.cool/arsrna/dev-env/node22   # 官方示例的开发镜像
-        volumes:
-          - /root/.pnpm:cow
-          - /root/.pnpm-store:cow
-          - /workspace/.next:cow
       stages:
-        - name: 启动
-          script: echo "开发容器已启动，可在 WebIDE 使用"
-
-push:
-  - name: firecrawl-lite-main
-    services:
-      - docker                                 # 关键：dind 服务，docker build/push 才能用
-    docker:
-      image: docker.cnb.cool/arsrna/dev-env/node22
-      volumes:
-        - /root/.npm:cow
-        - /workspace/node_modules:cow
-    env:
-      # 禁止 npm 因为 production 环境跳过 devDependencies
-      NPM_CONFIG_PRODUCTION: "false"
-    stages:
-      - name: install deps
-        script:
-          - npm ci
-
-      - name: unit tests
-        script:
-          - npm test
-
-      - name: build
-        script:
-          - npm run build
-
-      - name: package dist
-        script:
-          - ls dist
-          - tar -czf firecrawl-lite-dist.tar.gz dist
-
-      - name: docker login
-        script: |
-          set -e
-          echo "${CNB_TOKEN}" | docker login "${CNB_DOCKER_REGISTRY}" -u "${CNB_TOKEN_USER_NAME}" --password-stdin
-
-      - name: docker build
-        script: |
-          set -e
-          IMAGE_TAG="${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}:${CNB_COMMIT_SHA}"
-          docker build -t "${IMAGE_TAG}" .
-
-      - name: docker push
-        script: |
-          set -e
-          IMAGE_TAG="${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}:${CNB_COMMIT_SHA}"
-          docker push "${IMAGE_TAG}"
-
-    endStages:
-      - name: upload artifact to oss
-        allowFailure: true
-        image: registry.cn-hangzhou.aliyuncs.com/ossutil/ossutil:1.7.18
-        script: |
-          set -e
-          if [ ! -f firecrawl-lite-dist.tar.gz ]; then
-            echo "artifact missing, skip upload"
-            exit 0
-          fi
-          if [ -z "${OSS_ENDPOINT}" ] || [ -z "${OSS_ACCESS_KEY}" ] || [ -z "${OSS_SECRET_KEY}" ] || [ -z "${OSS_BUCKET}" ]; then
-            echo "OSS environment variables not provided, skip upload"
-            exit 0
-          fi
-          ossutil64 config -e "${OSS_ENDPOINT}" -i "${OSS_ACCESS_KEY}" -k "${OSS_SECRET_KEY}" -L CH
-          OBJECT_KEY="firecrawl-lite/${CNB_COMMIT_SHA}/firecrawl-lite-dist.tar.gz"
-          ossutil64 cp firecrawl-lite-dist.tar.gz "oss://${OSS_BUCKET}/${OBJECT_KEY}" --force
+        # 同名镜像构建&推送
+        - name: docker build
+          script: docker build -t ${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}:latest .
+        - name: docker push
+          script: docker push ${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}:latest
+        # 非同名镜像构建&推送
+        - name: docker build
+          script: docker build -t ${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}/<image_name>:latest .
+        - name: docker push
+          script: docker push ${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}/<image_name>:latest
