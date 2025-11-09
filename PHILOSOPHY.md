@@ -1,5 +1,143 @@
 # Firecrawl Lite Philosophy
 
+## Question 0: Performance & Architecture Questions
+
+### Why is Moonshot taking 8 seconds?
+
+**Answer**: Not slow—it's the right trade-off.
+
+```
+Timeline:
+- Browser startup:     ~500ms  (one-time, from pool)
+- Page load (network): ~2500ms (site is slow)
+- JS rendering:       ~1000ms (React re-renders)
+- Tab clicking:       ~3000ms (5 tabs × 500ms each)
+- HTML extraction:    ~500ms
+Total:                ~8000ms ✅ Expected
+```
+
+**Why tabs are slow:**
+```typescript
+for (const tab of tabs) {
+  await tab.click();
+  await new Promise(resolve => setTimeout(resolve, 500)); // Wait for render
+}
+```
+
+**Is it a problem?**
+- No. Moonshot is a SPA (React). This is unavoidable.
+- Alternative: Use API directly instead of scraping UI
+- Trade-off: 8 seconds for complete content vs. incomplete in 2 seconds
+
+**Linus view**: Correct tool for the job. If you want faster, don't scrape SPAs.
+
+---
+
+### Should we add YAML frontmatter to markdown?
+
+**Answer**: No. Keep it simple.
+
+```
+Current: Clean markdown, parseable by any tool
+With YAML: 
+  ---
+  title: Page Title
+  url: https://...
+  scraped_at: 2025-11-09
+  ---
+  # Content
+```
+
+**Problems:**
+1. Added complexity (parser must handle frontmatter)
+2. Not needed here (client already knows the URL)
+3. Different tools expect different metadata
+4. Violates single responsibility
+
+**Linus quote**: "KISS principle - Keep It Simple, Stupid"
+
+**If client needs metadata:**
+```json
+{
+  "markdown": "...",
+  "metadata": {
+    "url": "...",
+    "title": "...",
+    "scraped_at": "..."
+  }
+}
+```
+
+Better than polluting markdown.
+
+---
+
+### What are we missing?
+
+**Answer**: Almost nothing. Let me check core responsibilities:
+
+```
+✅ Convert URL → Markdown    (done)
+✅ Handle JS-rendered sites  (done with Puppeteer)
+✅ Manage concurrency        (done with browser pool)
+✅ Handle errors gracefully  (done)
+✅ Structured logging        (done)
+✅ Documented API           (done)
+✅ Tested thoroughly        (done)
+
+❓ What's missing?
+
+1. Rate limiting?        No. Client's responsibility
+2. Caching?             No. Simple tool, let client cache
+3. Retries?             No. Client should retry if needed
+4. Proxy support?       No. Too much scope
+5. Authentication?      No. Server is stateless
+6. Image downloading?   No. Already answered this
+7. Database storage?    No. Already answered this
+8. YAML metadata?       No. Just answered this
+9. ...more features?    Stop. We do one thing.
+```
+
+**Conclusion**: We're not missing anything. Tool is complete.
+
+---
+
+### Do we really need Docker?
+
+**Answer**: No. But it's nice to have.
+
+```
+Without Docker:
+- npm install
+- npm run build
+- npm start
+- Deployment: Copy files, run Node
+
+With Docker:
+- docker build -t firecrawl-lite .
+- docker run -p 3000:3000 firecrawl-lite
+- Deployment: Docker image
+
+Difference: Docker adds reproducibility. That's it.
+```
+
+**When to use Docker:**
+- ✅ Running in Kubernetes
+- ✅ Multiple servers
+- ✅ CI/CD pipeline
+- ✅ Cloud deployment (AWS, GCP, etc.)
+
+**When NOT to use Docker:**
+- ❌ Single server
+- ❌ Local development
+- ❌ Simple HTTP server
+
+**Linus view**: "Don't use Docker just because it's trendy."
+
+**Current status**: Optional Dockerfile included, not required.
+
+---
+
 ## Question 1: Why so many docs?
 
 **Linus would say**: "Write code, not documentation."
