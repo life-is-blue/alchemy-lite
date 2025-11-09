@@ -8,11 +8,29 @@ Production-ready web scraper. 933 lines. Does one thing well.
 npm install && npm run build && npm start
 ```
 
+## Testing
+
+```bash
+npm test              # Run tests once
+npm run test:watch    # Watch mode for development
+```
+
+**Test Structure:**
+```
+tests/
+├── unit/                 # Unit tests
+│   ├── logger.test.ts
+│   ├── types.test.ts
+│   └── lib/
+│       └── clean-html.test.ts
+└── integration/          # Integration tests (future)
+```
+
 ## API
 
 **POST /scrape** - Convert URL to Markdown
 ```json
-{"url": "https://example.com", "renderJS": false}
+{"url": "https://example.com", "renderJS": false, "autoClickTabs": false}
 ```
 
 **POST /crawl** - Recursive crawl with limits
