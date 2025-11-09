@@ -91,6 +91,17 @@ export function cleanHtml(html: string, options: CleanHtmlOptions): string {
     }
   });
 
+  // Preserve Mermaid diagrams (before JS rendering converts them to SVG)
+  // Mermaid uses <pre class="mermaid">diagram code</pre>
+  $('pre.mermaid, .mermaid > svg').each((_, el) => {
+    const $el = $(el);
+    const code = $el.text().trim();
+    if (code) {
+      // Replace with standard code block that Turndown can handle
+      $el.replaceWith(`<pre><code class="language-mermaid">${code}</code></pre>`);
+    }
+  });
+
   // Remove non-main content if requested
   if (onlyMainContent) {
     excludeNonMainTags.forEach(tag => {

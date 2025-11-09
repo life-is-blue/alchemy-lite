@@ -48,6 +48,22 @@ turndownService.addRule('inlineLink', {
   },
 });
 
+// Custom rule: Fix tab labels that stick together (e.g., "pythoncurlnode.js")
+// Many doc sites use inline buttons/spans for tabs, which Turndown concatenates
+turndownService.addRule('tabSeparator', {
+  filter: function (node) {
+    const role = node.getAttribute('role');
+    const className = node.className || '';
+    return role === 'tab' || 
+           className.includes('tab') || 
+           (node.nodeName === 'BUTTON' && node.parentNode?.className?.includes('tab'));
+  },
+  replacement: function (content) {
+    // Add separator so "python" "curl" don't become "pythoncurl"
+    return content.trim() + ' ';
+  },
+});
+
 // Custom rule for nested lists to preserve indentation
 turndownService.addRule('nestedList', {
   filter: function (node) {
