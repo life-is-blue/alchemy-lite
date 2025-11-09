@@ -3,6 +3,7 @@ main:
     - services:
         - docker
       docker:
+        image: node:20
       stages:
         - name: 安装&&构建
           script:
