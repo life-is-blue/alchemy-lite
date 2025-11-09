@@ -1,0 +1,7 @@
+# Clean up the crime scene.
+# The approval was for the last commit, not the next one.
+if [ -f ".approved-commit" ]; then
+  rm .approved-commit
+fi
+
+exit 0

@@ -1,0 +1,38 @@
+
+# Linus's Gatekeeper: No ticket, no entry.
+# Check for the approval file. If it doesn't exist, reject the commit.
+if [ ! -f ".approved-commit" ]; then
+  echo "❌ Commit Rejected: Talk is cheap. Show me the approval." >&2
+  echo "   This commit has not been approved by the code-reviewer agent." >&2
+  echo "   Summit the update to code-reviewer agent to complete the review process." >&2
+  echo "   DO NOT CREATE A COMMIT WITHOUT APPROVAL" >&2
+  
+  exit 1
+fi
+
+# Code quality checks
+echo "🔍 Running code quality checks..."
+
+# Check for garbage markers
+if git diff --cached | grep -qE 'EOFFILE|EOF;|ENDOFFILE'; then
+  echo "❌ Commit Rejected: Found garbage markers (EOFFILE/EOF;/ENDOFFILE)" >&2
+  exit 1
+fi
+
+# Run linting (web directory only)
+if [ -d "web" ]; then
+  echo "📝 Linting JavaScript and CSS..."
+  cd web
+  npm run lint 2>&1
+  if [ $? -ne 0 ]; then
+    echo "❌ Lint checks failed. Fix errors before committing." >&2
+    cd ..
+    exit 1
+  fi
+  cd ..
+fi
+
+echo "✅ All checks passed!"
+# If the file exists, the commit is allowed to proceed.
+# The post-commit hook will clean up the evidence.
+exit 0
