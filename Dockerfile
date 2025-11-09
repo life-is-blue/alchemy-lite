@@ -8,11 +8,15 @@ WORKDIR /app
 
 # Install dependencies first (layer caching)
 COPY package*.json ./
-RUN npm ci --only=production
+# 如需 .npmrc 等文件，请一并 COPY
+RUN npm ci
 
 # Copy source and build
 COPY . .
 RUN npm run build
+
+# Trim devDependencies to production only
+RUN npm prune --production
 
 # Stage 2: Runtime
 FROM node:20-alpine
