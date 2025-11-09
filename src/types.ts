@@ -7,7 +7,7 @@ export const ScrapeRequestSchema = z.object({
   url: z.string().url(),
   renderJS: z.boolean().optional().default(false),
   timeout: z.number().int().positive().optional().default(30000),
-  autoClickTabs: z.boolean().optional().default(true),
+  autoClickTabs: z.boolean().optional().default(false),
 });
 
 export type ScrapeRequest = z.infer<typeof ScrapeRequestSchema>;
