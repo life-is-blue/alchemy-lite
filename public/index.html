@@ -23,15 +23,15 @@
     <div class="card">
       <form id="scrapeForm">
         <div class="form-group">
-          <label for="url">网页地址</label>
-          <input 
-            type="text" 
+          <label for="url">网页地址（支持多行批量输入）</label>
+          <textarea 
             id="url" 
             name="url" 
+            rows="1"
             placeholder="https://example.com" 
             required
             autofocus
-          >
+          ></textarea>
         </div>
 
         <div class="options">
