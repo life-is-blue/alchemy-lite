@@ -68,8 +68,9 @@ tests/
 
 **POST /crawl** - Recursive crawl with limits
 ```json
-{"url": "https://example.com", "maxDepth": 2, "maxPages": 10}
+{"url": "https://example.com", "maxDepth": 2, "maxPages": 10, "pathPrefix": "/docs/"}
 ```
+- `pathPrefix` (optional): Only crawl URLs matching this path prefix
 
 **GET /health** - Health check
 
@@ -114,8 +115,9 @@ API_KEY=                 # Optional auth (leave empty to disable)
 
 **POST /crawl** - Recursive crawl with limits
 ```json
-{"url": "https://example.com", "maxDepth": 2, "maxPages": 10}
+{"url": "https://example.com", "maxDepth": 2, "maxPages": 10, "pathPrefix": "/docs/"}
 ```
+- `pathPrefix` (optional): Only crawl URLs matching this path prefix
 
 **GET /health** - Health check
 
@@ -136,3 +138,23 @@ See **DEPLOY.md** for detailed troubleshooting guide.
 ## Known Limitations
 
 **Dynamic Tabs**: Sites using lazy-rendered tabs (React Headless UI, etc.) need `autoClickTabs: true` to capture all tabs. CSS-hidden tabs are automatically included.
+
+## Development Tricks
+
+**Crawl documentation sites**: Use the `/crawl` endpoint to build local knowledge bases
+```bash
+# Example: Crawl entire site
+curl -X POST http://localhost:3000/crawl \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://docs.example.com", "maxDepth": 3, "maxPages": 200}' \
+  > docs.json
+
+# Example: Crawl specific path only (e.g., /zh/build/ directory)
+curl -X POST http://localhost:3000/crawl \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://docs.example.com/zh/build/", "pathPrefix": "/zh/build/", "maxPages": 50}' \
+  > build-docs.json
+
+# Search with jq
+cat docs.json | jq -r '.pages[].markdown' | grep -i "keyword"
+```

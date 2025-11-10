@@ -32,6 +32,7 @@ export const CrawlRequestSchema = z.object({
   maxPages: z.number().int().positive().optional().default(50),
   renderJS: z.boolean().optional().default(false),
   timeout: z.number().int().positive().optional().default(30000),
+  pathPrefix: z.string().optional(),
 });
 
 export type CrawlRequest = z.infer<typeof CrawlRequestSchema>;
