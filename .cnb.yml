@@ -105,8 +105,8 @@ main:
         - name: deploy-to-production
           image: tencentcom/ssh
           imports: https://cnb.cool/ai-alchemy-factory/project-secrets/-/blob/main/firecrawl-lite-ssh.yml
-          envs:
-            - VERSION=${CNB_BRANCH}
+          env:
+            VERSION: ${CNB_BRANCH}
           settings:
             host: $REMOTE_HOST
             port: $REMOTE_PORT
@@ -204,8 +204,8 @@ $:
         - name: rollback-to-version
           image: tencentcom/ssh
           imports: https://cnb.cool/ai-alchemy-factory/project-secrets/-/blob/main/firecrawl-lite-ssh.yml
-          envs:
-            - TARGET_VERSION=${ROLLBACK_VERSION}
+          env:
+            TARGET_VERSION: ${ROLLBACK_VERSION}
           settings:
             host: $REMOTE_HOST
             port: $REMOTE_PORT
