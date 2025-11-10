@@ -102,6 +102,10 @@ main:
             docker push "${LATEST_TAG}"
             echo "==> Pushed: ${IMAGE_TAG}"
             echo "==> Pushed: ${LATEST_TAG}"
+            # Export VERSION for use in next stage
+            echo "${VERSION}"
+          exports:
+            info: RELEASE_VERSION
         
         - name: deploy-to-production
           image: tencentcom/ssh
@@ -114,8 +118,12 @@ main:
             script:
               - |
                 set -eu
-                # Deploy the latest pushed image (always points to current version tag)
-                IMAGE="docker.cnb.cool/ai-alchemy-factory/firecrawl-lite:latest"
+                VERSION="${RELEASE_VERSION}"
+                if [ -z "${VERSION}" ]; then
+                  echo "==> FATAL: RELEASE_VERSION not passed from build stage."
+                  exit 1
+                fi
+                IMAGE="docker.cnb.cool/ai-alchemy-factory/firecrawl-lite:${VERSION}"
                 PREVIOUS_VERSION_FILE="/opt/firecrawl-lite/current_version.txt"
                 
                 echo "==> Deploying version ${VERSION} to production"
