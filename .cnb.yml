@@ -114,13 +114,8 @@ main:
             script:
               - |
                 set -eu
-                # Extract version from git tag (triggered by tag push)
-                VERSION=$(cd /workspace && git describe --tags --exact-match HEAD 2>/dev/null || echo "")
-                if [ -z "${VERSION}" ]; then
-                  echo "==> FATAL: Cannot extract version from git tag."
-                  exit 1
-                fi
-                IMAGE="docker.cnb.cool/ai-alchemy-factory/firecrawl-lite:${VERSION}"
+                # Deploy the latest pushed image (always points to current version tag)
+                IMAGE="docker.cnb.cool/ai-alchemy-factory/firecrawl-lite:latest"
                 PREVIOUS_VERSION_FILE="/opt/firecrawl-lite/current_version.txt"
                 
                 echo "==> Deploying version ${VERSION} to production"
@@ -214,16 +209,10 @@ $:
               - |
                 set -eu
                 
-                # Use environment variable (manual rollback) or extract from git ref
-                if [ -n "${ROLLBACK_VERSION:-}" ]; then
-                  TARGET_VERSION="${ROLLBACK_VERSION}"
-                else
-                  TARGET_VERSION=$(cd /workspace && git describe --tags --exact-match HEAD 2>/dev/null || echo "")
-                fi
-                
+                TARGET_VERSION="${ROLLBACK_VERSION:-}"
                 if [ -z "${TARGET_VERSION}" ]; then
-                  echo "==> ERROR: No target version available."
-                  echo "==> For manual rollback, set: ROLLBACK_VERSION=v1.2.2"
+                  echo "==> ERROR: ROLLBACK_VERSION environment variable not set."
+                  echo "==> Usage: trigger this manually and set ROLLBACK_VERSION=v1.2.2"
                   exit 1
                 fi
                 
