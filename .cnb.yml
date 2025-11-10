@@ -88,6 +88,9 @@ main:
               echo "==> FATAL: CNB_BRANCH is not set. This should never happen."
               exit 1
             fi
+            # Store VERSION in workspace for use in next stage
+            echo "${VERSION}" > /workspace/.version
+            
             IMAGE_TAG="${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}:${VERSION}"
             LATEST_TAG="${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}:latest"
             
@@ -113,9 +116,10 @@ main:
             script:
               - |
                 set -eu
-                VERSION="${CNB_BRANCH}"
+                # Read VERSION written by previous stage
+                VERSION=$(cat /workspace/.version)
                 if [ -z "${VERSION}" ]; then
-                  echo "==> FATAL: CNB_BRANCH is not set. This should never happen."
+                  echo "==> FATAL: VERSION file not found or empty. Previous stage may have failed."
                   exit 1
                 fi
                 IMAGE="docker.cnb.cool/ai-alchemy-factory/firecrawl-lite:${VERSION}"
@@ -212,10 +216,14 @@ $:
               - |
                 set -eu
                 
-                TARGET_VERSION="${ROLLBACK_VERSION}"
-                if [ -z "${TARGET_VERSION}" ]; then
-                  echo "==> ERROR: ROLLBACK_VERSION not set."
-                  echo "==> Set it in CI environment: ROLLBACK_VERSION=v1.2.2"
+                # Use environment variable or read from file (for manual rollback triggers)
+                if [ -n "${ROLLBACK_VERSION:-}" ]; then
+                  TARGET_VERSION="${ROLLBACK_VERSION}"
+                elif [ -f /workspace/.version ]; then
+                  TARGET_VERSION=$(cat /workspace/.version)
+                else
+                  echo "==> ERROR: No target version available."
+                  echo "==> For manual rollback, set: ROLLBACK_VERSION=v1.2.2"
                   exit 1
                 fi
                 
