@@ -96,7 +96,7 @@ body {
   line-height: 1.381;
   font-weight: 400;
   letter-spacing: 0.011em;
-  color: var(--color-text-secondary);
+  color: #515154;
   max-width: 640px;
   margin: 0 auto;
 }
@@ -130,7 +130,8 @@ label {
   letter-spacing: -0.016em;
 }
 
-input[type="text"] {
+input[type="text"],
+textarea#url {
   width: 100%;
   padding: 14px 16px;
   font-size: 17px;
@@ -144,13 +145,22 @@ input[type="text"] {
   -webkit-appearance: none;
 }
 
-input[type="text"]:focus {
+textarea#url {
+  resize: vertical;
+  min-height: 48px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+input[type="text"]:focus,
+textarea#url:focus {
   outline: none;
   border-color: var(--color-primary);
   box-shadow: var(--shadow-focus);
 }
 
-input[type="text"]::placeholder {
+input[type="text"]::placeholder,
+textarea#url::placeholder {
   color: var(--color-text-tertiary);
 }
 
@@ -167,8 +177,7 @@ input[type="text"]::placeholder {
   align-items: center;
   cursor: pointer;
   user-select: none;
-  padding: 12px 0; /* Expand touch target to 44px */
-  margin: -12px 0; /* Compensate spacing */
+  min-height: 44px;
 }
 
 input[type="checkbox"] {
@@ -232,7 +241,7 @@ input[type="checkbox"] {
   font-weight: 400;
   font-family: inherit;
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   cursor: pointer;
   transition: all var(--transition-fast);
   display: inline-flex;
@@ -345,6 +354,13 @@ textarea:focus {
   align-items: center;
 }
 
+/* Info Message (for progress display) */
+.error.info {
+  background: #e3f2fd;
+  color: var(--color-primary);
+  border-color: #90caf9;
+}
+
 /* Icon Styles */
 .icon {
   display: block;
@@ -441,13 +457,27 @@ textarea:focus {
     margin-bottom: 24px;
   }
 
+  /* 结果区域标题垂直布局 */
+  .result-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  /* 按钮组占满宽度 */
   .button-group {
-    flex-wrap: wrap;
+    width: 100%;
+    flex-wrap: nowrap;
     gap: 8px;
   }
 
+  /* 按钮平分空间 */
   .button-secondary {
-    flex: 1 1 auto;
-    min-width: 120px;
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 12px 16px;
+    gap: 6px;
+    justify-content: center;
+    min-height: 44px;
   }
 }
