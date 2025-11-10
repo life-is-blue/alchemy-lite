@@ -4,8 +4,9 @@
 # Philosophy:
 #   1. Don't break userspace (production).
 #   2. Every release is a Git tag. No magic timestamps.
-#   3. You MUST be able to rollback. Always.
-#   4. Keep it simple, stupid.
+#   3. Build and Deploy are SEPARATED. Build on tag, deploy manually.
+#   4. You MUST be able to rollback. Always.
+#   5. Keep it simple, stupid.
 # ============================================================================
 
 # ============================================================================
@@ -47,10 +48,11 @@ main:
             echo "==> Dev image pushed. Use this for staging/testing, NOT production."
 
 # ============================================================================
-# Tag Push: Production Release
+# Tag Push: Build Release Image ONLY - DO NOT AUTO-DEPLOY
 # ============================================================================
-# When you're ready to release, tag it: git tag v1.2.3 && git push origin v1.2.3
-# This is the ONLY way to deploy to production. No shortcuts.
+# When ready to release, tag it: git tag v1.2.3 && git push origin v1.2.3
+# This builds and pushes the Docker image to registry.
+# To deploy to production, use manual 'deploy' operation (see below).
 #
 # Pattern: "v*.*.*" matches semantic version tags like v1.2.3, v2.0.0, etc.
 # ============================================================================
@@ -102,11 +104,24 @@ main:
             docker push "${LATEST_TAG}" >&2
             echo "==> Pushed: ${IMAGE_TAG}" >&2
             echo "==> Pushed: ${LATEST_TAG}" >&2
-            # Export VERSION for use in next stage - ONLY stdout output
-            echo "${VERSION}"
-          exports:
-            info: RELEASE_VERSION
-        
+            echo "==> Build complete. To deploy, run manual 'deploy' with DEPLOY_VERSION=${VERSION}" >&2
+
+# ============================================================================
+# Manual Operations
+# ============================================================================
+
+$:
+  # -------------------------------------------------------------------------
+  # Manual Deploy to Production
+  # -------------------------------------------------------------------------
+  # Usage: Trigger this manually in CI, set DEPLOY_VERSION env var.
+  # Example: DEPLOY_VERSION=v1.2.3
+  # This deploys a previously built image to production.
+  # -------------------------------------------------------------------------
+  deploy:
+    - services:
+        - docker
+      stages:
         - name: deploy-to-production
           image: cnbcool/ssh
           imports: https://cnb.cool/ai-alchemy-factory/project-secrets/-/blob/main/firecrawl-lite-ssh.yml
@@ -118,7 +133,13 @@ main:
             port: ${REMOTE_PORT}
             command_timeout: 5m
             script: |
-              VERSION="${RELEASE_VERSION}"
+              VERSION="${DEPLOY_VERSION:-}"
+              if [ -z "${VERSION}" ]; then
+                echo "==> ERROR: DEPLOY_VERSION environment variable not set."
+                echo "==> Usage: trigger this manually and set DEPLOY_VERSION=v1.2.3"
+                exit 1
+              fi
+              
               IMAGE="docker.cnb.cool/ai-alchemy-factory/firecrawl-lite:${VERSION}"
               
               echo "==> Deploying version ${VERSION}"
@@ -137,71 +158,53 @@ main:
               
               echo "==> Deployment complete"
               docker ps | grep firecrawl-lite
-
-# ============================================================================
-# Manual Operations
-# ============================================================================
-
-$:
+  
   # -------------------------------------------------------------------------
   # Manual Rollback to Specific Version
   # -------------------------------------------------------------------------
   # Usage: Trigger this manually in CI, set ROLLBACK_VERSION env var.
   # Example: ROLLBACK_VERSION=v1.2.2
+  # Same as deploy, just semantically different name.
   # -------------------------------------------------------------------------
   rollback:
     - services:
         - docker
       stages:
         - name: rollback-to-version
-          image: tencentcom/ssh
+          image: cnbcool/ssh
           imports: https://cnb.cool/ai-alchemy-factory/project-secrets/-/blob/main/firecrawl-lite-ssh.yml
           settings:
-            host: $REMOTE_HOST
-            port: $REMOTE_PORT
-            username: $REMOTE_USERNAME
-            key: $PRIVATE_KEY
-            script:
-              - |
-                set -eu
-                
-                TARGET_VERSION="${ROLLBACK_VERSION:-}"
-                if [ -z "${TARGET_VERSION}" ]; then
-                  echo "==> ERROR: ROLLBACK_VERSION environment variable not set."
-                  echo "==> Usage: trigger this manually and set ROLLBACK_VERSION=v1.2.2"
-                  exit 1
-                fi
-                
-                IMAGE="docker.cnb.cool/ai-alchemy-factory/firecrawl-lite:${TARGET_VERSION}"
-                
-                echo "==> Rolling back to version ${TARGET_VERSION}"
-                
-                echo "${REGISTRY_TOKEN}" | docker login -u "${REGISTRY_USER}" --password-stdin docker.cnb.cool
-                docker pull "${IMAGE}"
-                
-                docker stop firecrawl-lite || true
-                docker rm firecrawl-lite || true
-                docker run -d -p 80:3000 \
-                  --name firecrawl-lite \
-                  --restart=always \
-                  -e VERSION="${TARGET_VERSION}" \
-                  "${IMAGE}"
-                
-                echo "==> Running health check..."
-                for i in $(seq 1 10); do
-                  if curl -fsS http://127.0.0.1:80/health; then
-                    mkdir -p /opt/firecrawl-lite
-                    echo "${TARGET_VERSION}" > /opt/firecrawl-lite/current_version.txt
-                    echo "==> Rollback successful. Version ${TARGET_VERSION} is live."
-                    exit 0
-                  fi
-                  echo "==> Health check attempt ${i}/10 failed. Retrying..."
-                  sleep 3
-                done
-                
-                echo "==> FATAL: Rollback to ${TARGET_VERSION} failed health check."
-                echo "==> You're on your own now. Good luck."
+            host:
+              - ${REMOTE_HOST}
+            username: ${REMOTE_USERNAME}
+            key: ${PRIVATE_KEY}
+            port: ${REMOTE_PORT}
+            command_timeout: 5m
+            script: |
+              TARGET_VERSION="${ROLLBACK_VERSION:-}"
+              if [ -z "${TARGET_VERSION}" ]; then
+                echo "==> ERROR: ROLLBACK_VERSION environment variable not set."
+                echo "==> Usage: trigger this manually and set ROLLBACK_VERSION=v1.2.2"
                 exit 1
+              fi
+              
+              IMAGE="docker.cnb.cool/ai-alchemy-factory/firecrawl-lite:${TARGET_VERSION}"
+              
+              echo "==> Rolling back to version ${TARGET_VERSION}"
+              
+              echo "${REGISTRY_TOKEN}" | docker login -u "${REGISTRY_USER}" --password-stdin docker.cnb.cool
+              docker pull "${IMAGE}"
+              
+              docker stop firecrawl-lite || true
+              docker rm firecrawl-lite || true
+              docker run -d -p 80:3000 \
+                --name firecrawl-lite \
+                --restart=always \
+                -e VERSION="${TARGET_VERSION}" \
+                "${IMAGE}"
+              
+              echo "==> Rollback complete"
+              docker ps | grep firecrawl-lite
   
   # -------------------------------------------------------------------------
   # Check Current Production Version
@@ -211,18 +214,15 @@ $:
         - docker
       stages:
         - name: show-current-version
-          image: tencentcom/ssh
+          image: cnbcool/ssh
           imports: https://cnb.cool/ai-alchemy-factory/project-secrets/-/blob/main/firecrawl-lite-ssh.yml
           settings:
-            host: $REMOTE_HOST
-            port: $REMOTE_PORT
-            username: $REMOTE_USERNAME
-            key: $PRIVATE_KEY
-            script:
-              - |
-                set -eu
-                echo "==> Current production version:"
-                cat /opt/firecrawl-lite/current_version.txt 2>/dev/null || echo "Unknown (file not found)"
-                echo ""
-                echo "==> Running container:"
-                docker ps --filter name=firecrawl-lite --format "table {{.Names}}\t{{.Image}}\t{{.Status}}"
+            host:
+              - ${REMOTE_HOST}
+            username: ${REMOTE_USERNAME}
+            key: ${PRIVATE_KEY}
+            port: ${REMOTE_PORT}
+            command_timeout: 1m
+            script: |
+              echo "==> Running container:"
+              docker ps --filter name=firecrawl-lite --format "table {{.Names}}\t{{.Image}}\t{{.Status}}"
