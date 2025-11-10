@@ -4,6 +4,9 @@ main:
         - docker
       docker:
         image: node:20
+        volumes:
+          - /root/.npm:cow
+          - ./node_modules
       stages:
         - name: build
           script: |
@@ -15,7 +18,7 @@ main:
           image: docker:24-cli
           script: |
             set -eu
-            IMAGE_TAG="${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}:$(date +%Y%m%d%H%M%S)-$(git rev-parse --short HEAD)"
+            IMAGE_TAG="${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}:$(date +%Y%m%d%H%M%S)"
             LATEST_TAG="${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}:latest"
             docker login -u "${CNB_TOKEN_USER_NAME}" -p "${CNB_TOKEN}" "${CNB_DOCKER_REGISTRY}"
             docker pull "${LATEST_TAG}" || true
@@ -27,19 +30,25 @@ main:
         - name: deploy to vm
           image: tencentcom/ssh
           imports: https://cnb.cool/ai-alchemy-factory/project-secrets/-/blob/main/firecrawl-lite-ssh.yml
-          script: |
-            set -eu
-            docker login -u "${REGISTRY_USER}" -p "${REGISTRY_TOKEN}" docker.cnb.cool
-            docker pull docker.cnb.cool/ai-alchemy-factory/firecrawl-lite:latest
-            docker stop firecrawl-lite || true
-            docker rm firecrawl-lite || true
-            docker run -d -p 80:3000 --name firecrawl-lite --restart=always docker.cnb.cool/ai-alchemy-factory/firecrawl-lite:latest
-            for _ in $(seq 1 10); do
-              if curl -fsS http://127.0.0.1:80/health; then
-                echo "Health check passed."
-                exit 0
-              fi
-              sleep 3
-            done
-            echo "Health check failed after multiple attempts." >&2
-            exit 1
+          settings:
+            host: $REMOTE_HOST
+            port: $REMOTE_PORT
+            username: $REMOTE_USERNAME
+            key: $PRIVATE_KEY
+            script:
+              - |
+                set -eu
+                docker login -u "${REGISTRY_USER}" -p "${REGISTRY_TOKEN}" docker.cnb.cool
+                docker pull docker.cnb.cool/ai-alchemy-factory/firecrawl-lite:latest
+                docker stop firecrawl-lite || true
+                docker rm firecrawl-lite || true
+                docker run -d -p 80:3000 --name firecrawl-lite --restart=always docker.cnb.cool/ai-alchemy-factory/firecrawl-lite:latest
+                for _ in $(seq 1 10); do
+                  if curl -fsS http://127.0.0.1:80/health; then
+                    echo "Health check passed."
+                    exit 0
+                  fi
+                  sleep 3
+                done
+                echo "Health check failed after multiple attempts." >&2
+                exit 1
