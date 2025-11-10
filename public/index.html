@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Firecrawl Lite - 网页抓取工具</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <!-- SVG Icon Sprite -->
+  <object data="/icons.svg" type="image/svg+xml" style="display: none;"></object>
+  <!-- Hero Section -->
+  <div class="hero">
+    <div class="hero-content">
+      <img src="/image.png" alt="Firecrawl Lite" class="hero-image">
+      <h1>Firecrawl Lite</h1>
+      <p class="hero-subtitle">将任意网页转换为干净、结构化的 Markdown 格式</p>
+    </div>
+  </div>
+
+  <!-- Main Content -->
+  <div class="container">
+    <div class="card">
+      <form id="scrapeForm">
+        <div class="form-group">
+          <label for="url">网页地址</label>
+          <input 
+            type="text" 
+            id="url" 
+            name="url" 
+            placeholder="https://example.com" 
+            required
+            autofocus
+          >
+        </div>
+
+        <div class="options">
+          <div class="checkbox-wrapper">
+            <input type="checkbox" id="renderJS" name="renderJS">
+            <label for="renderJS">渲染 JavaScript（较慢，适用于单页应用）</label>
+          </div>
+          <div class="checkbox-wrapper">
+            <input type="checkbox" id="autoClickTabs" name="autoClickTabs">
+            <label for="autoClickTabs">自动点击标签页（适用于文档站点）</label>
+          </div>
+        </div>
+
+        <button type="submit" class="button-primary" id="submitBtn" aria-label="开始抓取网页">
+          开始抓取
+          <span class="loading-spinner" id="loading" style="display: none;" role="status" aria-label="正在加载">
+            <svg class="icon"><use href="/icons.svg#icon-spinner"></use></svg>
+          </span>
+        </button>
+      </form>
+
+      <div class="error" id="error" role="alert" aria-live="assertive"></div>
+    </div>
+
+    <div class="result" id="result">
+      <div class="card">
+        <div class="result-header">
+          <span class="result-label">Markdown 输出</span>
+          <div class="button-group">
+            <button 
+              type="button" 
+              class="button-secondary" 
+              id="copyBtn"
+              aria-label="复制 Markdown 到剪贴板"
+              data-copied-text="已复制"
+              data-error-text="复制失败">
+              <svg class="icon icon-sm"><use href="/icons.svg#icon-copy"></use></svg>
+              <span>复制</span>
+            </button>
+            <button 
+              type="button" 
+              class="button-secondary" 
+              id="downloadBtn"
+              aria-label="下载 Markdown 文件"
+              data-downloaded-text="已下载">
+              <svg class="icon icon-sm"><use href="/icons.svg#icon-download"></use></svg>
+              <span>下载</span>
+            </button>
+          </div>
+        </div>
+        <textarea id="markdown" readonly></textarea>
+      </div>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div class="footer">
+    <div class="footer-content">
+      <a href="https://github.com" target="_blank">GitHub</a> · 
+      <a href="/health" target="_blank">服务状态</a> · 
+      简约而不简单
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
