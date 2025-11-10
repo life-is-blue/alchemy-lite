@@ -105,8 +105,6 @@ main:
         - name: deploy-to-production
           image: tencentcom/ssh
           imports: https://cnb.cool/ai-alchemy-factory/project-secrets/-/blob/main/firecrawl-lite-ssh.yml
-          env:
-            VERSION: ${CNB_BRANCH}
           settings:
             host: $REMOTE_HOST
             port: $REMOTE_PORT
@@ -115,8 +113,9 @@ main:
             script:
               - |
                 set -eu
+                VERSION="${CNB_BRANCH}"
                 if [ -z "${VERSION}" ]; then
-                  echo "==> FATAL: VERSION is not set. This should never happen."
+                  echo "==> FATAL: CNB_BRANCH is not set. This should never happen."
                   exit 1
                 fi
                 IMAGE="docker.cnb.cool/ai-alchemy-factory/firecrawl-lite:${VERSION}"
@@ -204,8 +203,6 @@ $:
         - name: rollback-to-version
           image: tencentcom/ssh
           imports: https://cnb.cool/ai-alchemy-factory/project-secrets/-/blob/main/firecrawl-lite-ssh.yml
-          env:
-            TARGET_VERSION: ${ROLLBACK_VERSION}
           settings:
             host: $REMOTE_HOST
             port: $REMOTE_PORT
@@ -215,6 +212,7 @@ $:
               - |
                 set -eu
                 
+                TARGET_VERSION="${ROLLBACK_VERSION}"
                 if [ -z "${TARGET_VERSION}" ]; then
                   echo "==> ERROR: ROLLBACK_VERSION not set."
                   echo "==> Set it in CI environment: ROLLBACK_VERSION=v1.2.2"
