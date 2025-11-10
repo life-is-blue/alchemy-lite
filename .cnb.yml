@@ -92,17 +92,17 @@ main:
             IMAGE_TAG="${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}:${VERSION}"
             LATEST_TAG="${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}:latest"
             
-            echo "==> Building production image for version ${VERSION}"
-            echo "${CNB_TOKEN}" | docker login -u "${CNB_TOKEN_USER_NAME}" --password-stdin "${CNB_DOCKER_REGISTRY}"
-            docker pull "${LATEST_TAG}" || true
+            echo "==> Building production image for version ${VERSION}" >&2
+            echo "${CNB_TOKEN}" | docker login -u "${CNB_TOKEN_USER_NAME}" --password-stdin "${CNB_DOCKER_REGISTRY}" >&2
+            docker pull "${LATEST_TAG}" >&2 || true
             export DOCKER_BUILDKIT=1
-            docker build --cache-from "${LATEST_TAG}" -t "${IMAGE_TAG}" .
-            docker tag "${IMAGE_TAG}" "${LATEST_TAG}"
-            docker push "${IMAGE_TAG}"
-            docker push "${LATEST_TAG}"
-            echo "==> Pushed: ${IMAGE_TAG}"
-            echo "==> Pushed: ${LATEST_TAG}"
-            # Export VERSION for use in next stage
+            docker build --cache-from "${LATEST_TAG}" -t "${IMAGE_TAG}" . >&2
+            docker tag "${IMAGE_TAG}" "${LATEST_TAG}" >&2
+            docker push "${IMAGE_TAG}" >&2
+            docker push "${LATEST_TAG}" >&2
+            echo "==> Pushed: ${IMAGE_TAG}" >&2
+            echo "==> Pushed: ${LATEST_TAG}" >&2
+            # Export VERSION for use in next stage - ONLY stdout output
             echo "${VERSION}"
           exports:
             info: RELEASE_VERSION
@@ -120,73 +120,73 @@ main:
                 set -eu
                 VERSION="${RELEASE_VERSION}"
                 if [ -z "${VERSION}" ]; then
-                  echo "==> FATAL: RELEASE_VERSION not passed from build stage."
+                  echo "==> FATAL: RELEASE_VERSION not passed from build stage." >&2
                   exit 1
                 fi
                 IMAGE="docker.cnb.cool/ai-alchemy-factory/firecrawl-lite:${VERSION}"
                 PREVIOUS_VERSION_FILE="/opt/firecrawl-lite/current_version.txt"
                 
-                echo "==> Deploying version ${VERSION} to production"
+                echo "==> Deploying version ${VERSION} to production" >&2
                 
                 # Ensure directory exists
                 mkdir -p "$(dirname "${PREVIOUS_VERSION_FILE}")"
                 
                 # Save current version for potential rollback
                 PREVIOUS_VERSION=$(cat "${PREVIOUS_VERSION_FILE}" 2>/dev/null || echo "none")
-                echo "==> Previous version: ${PREVIOUS_VERSION}"
+                echo "==> Previous version: ${PREVIOUS_VERSION}" >&2
                 
                 # Pull new image
-                echo "${REGISTRY_TOKEN}" | docker login -u "${REGISTRY_USER}" --password-stdin docker.cnb.cool
-                docker pull "${IMAGE}"
+                echo "${REGISTRY_TOKEN}" | docker login -u "${REGISTRY_USER}" --password-stdin docker.cnb.cool >&2
+                docker pull "${IMAGE}" >&2
                 
                 # Deploy new version
-                docker stop firecrawl-lite || true
-                docker rm firecrawl-lite || true
+                docker stop firecrawl-lite >&2 || true
+                docker rm firecrawl-lite >&2 || true
                 docker run -d -p 80:3000 \
                   --name firecrawl-lite \
                   --restart=always \
                   -e VERSION="${VERSION}" \
-                  "${IMAGE}"
+                  "${IMAGE}" >&2
                 
                 # Health check
-                echo "==> Running health check..."
+                echo "==> Running health check..." >&2
                 for i in $(seq 1 10); do
-                  if curl -fsS http://127.0.0.1:80/health; then
+                  if curl -fsS http://127.0.0.1:80/health >&2; then
                     echo "${VERSION}" > "${PREVIOUS_VERSION_FILE}"
-                    echo "==> Deployment successful. Version ${VERSION} is live."
+                    echo "==> Deployment successful. Version ${VERSION} is live." >&2
                     exit 0
                   fi
-                  echo "==> Health check attempt ${i}/10 failed. Retrying..."
+                  echo "==> Health check attempt ${i}/10 failed. Retrying..." >&2
                   sleep 3
                 done
                 
                 # Health check failed - attempt rollback
-                echo "==> FATAL: Health check failed for ${VERSION}."
+                echo "==> FATAL: Health check failed for ${VERSION}." >&2
                 if [ "${PREVIOUS_VERSION}" != "none" ]; then
-                  echo "==> Attempting automatic rollback to ${PREVIOUS_VERSION}..."
+                  echo "==> Attempting automatic rollback to ${PREVIOUS_VERSION}..." >&2
                   ROLLBACK_IMAGE="docker.cnb.cool/ai-alchemy-factory/firecrawl-lite:${PREVIOUS_VERSION}"
-                  docker pull "${ROLLBACK_IMAGE}" || true
-                  docker stop firecrawl-lite || true
-                  docker rm firecrawl-lite || true
+                  docker pull "${ROLLBACK_IMAGE}" >&2 || true
+                  docker stop firecrawl-lite >&2 || true
+                  docker rm firecrawl-lite >&2 || true
                   docker run -d -p 80:3000 \
                     --name firecrawl-lite \
                     --restart=always \
                     -e VERSION="${PREVIOUS_VERSION}" \
-                    "${ROLLBACK_IMAGE}"
+                    "${ROLLBACK_IMAGE}" >&2
                   
                   # Verify rollback
-                  echo "==> Verifying rollback health..."
+                  echo "==> Verifying rollback health..." >&2
                   for i in $(seq 1 10); do
-                    if curl -fsS http://127.0.0.1:80/health; then
-                      echo "==> Rollback to ${PREVIOUS_VERSION} successful."
-                      echo "==> WARNING: New version ${VERSION} failed and was rolled back."
+                    if curl -fsS http://127.0.0.1:80/health >&2; then
+                      echo "==> Rollback to ${PREVIOUS_VERSION} successful." >&2
+                      echo "==> WARNING: New version ${VERSION} failed and was rolled back." >&2
                       exit 1
                     fi
                     sleep 3
                   done
                   
-                  echo "==> CRITICAL: Rollback to ${PREVIOUS_VERSION} also failed."
-                  echo "==> Production is DOWN. Manual intervention REQUIRED IMMEDIATELY."
+                  echo "==> CRITICAL: Rollback to ${PREVIOUS_VERSION} also failed." >&2
+                  echo "==> Production is DOWN. Manual intervention REQUIRED IMMEDIATELY." >&2
                 fi
                 exit 1
 
