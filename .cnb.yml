@@ -1,3 +1,20 @@
+# ============================================================================
+# CI/CD Configuration - Linus Style
+# ============================================================================
+# Philosophy:
+#   1. Don't break userspace (production).
+#   2. Every release is a Git tag. No magic timestamps.
+#   3. You MUST be able to rollback. Always.
+#   4. Keep it simple, stupid.
+# ============================================================================
+
+# ============================================================================
+# Branch Push: Build and Test Only - DO NOT DEPLOY
+# ============================================================================
+# Every push to main triggers CI, but does NOT touch production.
+# This is a sanity check. If tests fail, fix your damn code.
+# ============================================================================
+
 main:
   push:
     - services:
@@ -8,26 +25,84 @@ main:
           - /root/.npm:cow
           - ./node_modules
       stages:
-        - name: build
+        - name: test-and-build
           script: |
             set -eu
+            echo "==> Running tests. If this fails, don't even think about releasing."
             npm ci
             npm test
             npm run build
-        - name: build-and-push-image
+            echo "==> Tests passed. Build artifacts ready."
+        
+        - name: build-dev-image
           image: docker:24-cli
           script: |
             set -eu
-            IMAGE_TAG="${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}:$(date +%Y%m%d%H%M%S)"
+            DEV_TAG="${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}:dev-$(date +%Y%m%d-%H%M%S)"
+            
+            echo "==> Building dev image: ${DEV_TAG}"
+            echo "${CNB_TOKEN}" | docker login -u "${CNB_TOKEN_USER_NAME}" --password-stdin "${CNB_DOCKER_REGISTRY}"
+            docker build -t "${DEV_TAG}" .
+            docker push "${DEV_TAG}"
+            echo "==> Dev image pushed. Use this for staging/testing, NOT production."
+
+# ============================================================================
+# Tag Push: Production Release
+# ============================================================================
+# When you're ready to release, tag it: git tag v1.2.3 && git push origin v1.2.3
+# This is the ONLY way to deploy to production. No shortcuts.
+#
+# Pattern: "v*.*.*" matches semantic version tags like v1.2.3, v2.0.0, etc.
+# ============================================================================
+
+"v*.*.*":
+  tag_push:
+    - services:
+        - docker
+      docker:
+        image: node:20
+        volumes:
+          - /root/.npm:cow
+          - ./node_modules
+      stages:
+        - name: test-and-build
+          script: |
+            set -eu
+            VERSION="${CNB_BRANCH}"
+            if [ -z "${VERSION}" ]; then
+              echo "==> FATAL: CNB_BRANCH is not set. This should never happen."
+              exit 1
+            fi
+            echo "==> Building release ${VERSION}"
+            npm ci
+            npm test
+            npm run build
+            echo "==> Release build complete."
+        
+        - name: build-and-push-release
+          image: docker:24-cli
+          script: |
+            set -eu
+            VERSION="${CNB_BRANCH}"
+            if [ -z "${VERSION}" ]; then
+              echo "==> FATAL: CNB_BRANCH is not set. This should never happen."
+              exit 1
+            fi
+            IMAGE_TAG="${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}:${VERSION}"
             LATEST_TAG="${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}:latest"
-            docker login -u "${CNB_TOKEN_USER_NAME}" -p "${CNB_TOKEN}" "${CNB_DOCKER_REGISTRY}"
+            
+            echo "==> Building production image for version ${VERSION}"
+            echo "${CNB_TOKEN}" | docker login -u "${CNB_TOKEN_USER_NAME}" --password-stdin "${CNB_DOCKER_REGISTRY}"
             docker pull "${LATEST_TAG}" || true
             export DOCKER_BUILDKIT=1
             docker build --cache-from "${LATEST_TAG}" -t "${IMAGE_TAG}" .
             docker tag "${IMAGE_TAG}" "${LATEST_TAG}"
             docker push "${IMAGE_TAG}"
             docker push "${LATEST_TAG}"
-        - name: deploy to vm
+            echo "==> Pushed: ${IMAGE_TAG}"
+            echo "==> Pushed: ${LATEST_TAG}"
+        
+        - name: deploy-to-production
           image: tencentcom/ssh
           imports: https://cnb.cool/ai-alchemy-factory/project-secrets/-/blob/main/firecrawl-lite-ssh.yml
           settings:
@@ -38,17 +113,163 @@ main:
             script:
               - |
                 set -eu
-                docker login -u "${REGISTRY_USER}" -p "${REGISTRY_TOKEN}" docker.cnb.cool
-                docker pull docker.cnb.cool/ai-alchemy-factory/firecrawl-lite:latest
+                VERSION="${CNB_BRANCH}"
+                if [ -z "${VERSION}" ]; then
+                  echo "==> FATAL: CNB_BRANCH is not set. This should never happen."
+                  exit 1
+                fi
+                IMAGE="docker.cnb.cool/ai-alchemy-factory/firecrawl-lite:${VERSION}"
+                PREVIOUS_VERSION_FILE="/opt/firecrawl-lite/current_version.txt"
+                
+                echo "==> Deploying version ${VERSION} to production"
+                
+                # Ensure directory exists
+                mkdir -p "$(dirname "${PREVIOUS_VERSION_FILE}")"
+                
+                # Save current version for potential rollback
+                PREVIOUS_VERSION=$(cat "${PREVIOUS_VERSION_FILE}" 2>/dev/null || echo "none")
+                echo "==> Previous version: ${PREVIOUS_VERSION}"
+                
+                # Pull new image
+                echo "${REGISTRY_TOKEN}" | docker login -u "${REGISTRY_USER}" --password-stdin docker.cnb.cool
+                docker pull "${IMAGE}"
+                
+                # Deploy new version
                 docker stop firecrawl-lite || true
                 docker rm firecrawl-lite || true
-                docker run -d -p 80:3000 --name firecrawl-lite --restart=always docker.cnb.cool/ai-alchemy-factory/firecrawl-lite:latest
-                for _ in $(seq 1 10); do
+                docker run -d -p 80:3000 \
+                  --name firecrawl-lite \
+                  --restart=always \
+                  -e VERSION="${VERSION}" \
+                  "${IMAGE}"
+                
+                # Health check
+                echo "==> Running health check..."
+                for i in $(seq 1 10); do
                   if curl -fsS http://127.0.0.1:80/health; then
-                    echo "Health check passed."
+                    echo "${VERSION}" > "${PREVIOUS_VERSION_FILE}"
+                    echo "==> Deployment successful. Version ${VERSION} is live."
                     exit 0
                   fi
+                  echo "==> Health check attempt ${i}/10 failed. Retrying..."
                   sleep 3
                 done
-                echo "Health check failed after multiple attempts." >&2
+                
+                # Health check failed - attempt rollback
+                echo "==> FATAL: Health check failed for ${VERSION}."
+                if [ "${PREVIOUS_VERSION}" != "none" ]; then
+                  echo "==> Attempting automatic rollback to ${PREVIOUS_VERSION}..."
+                  ROLLBACK_IMAGE="docker.cnb.cool/ai-alchemy-factory/firecrawl-lite:${PREVIOUS_VERSION}"
+                  docker pull "${ROLLBACK_IMAGE}" || true
+                  docker stop firecrawl-lite || true
+                  docker rm firecrawl-lite || true
+                  docker run -d -p 80:3000 \
+                    --name firecrawl-lite \
+                    --restart=always \
+                    -e VERSION="${PREVIOUS_VERSION}" \
+                    "${ROLLBACK_IMAGE}"
+                  
+                  # Verify rollback
+                  echo "==> Verifying rollback health..."
+                  for i in $(seq 1 10); do
+                    if curl -fsS http://127.0.0.1:80/health; then
+                      echo "==> Rollback to ${PREVIOUS_VERSION} successful."
+                      echo "==> WARNING: New version ${VERSION} failed and was rolled back."
+                      exit 1
+                    fi
+                    sleep 3
+                  done
+                  
+                  echo "==> CRITICAL: Rollback to ${PREVIOUS_VERSION} also failed."
+                  echo "==> Production is DOWN. Manual intervention REQUIRED IMMEDIATELY."
+                fi
                 exit 1
+
+# ============================================================================
+# Manual Operations
+# ============================================================================
+
+$:
+  # -------------------------------------------------------------------------
+  # Manual Rollback to Specific Version
+  # -------------------------------------------------------------------------
+  # Usage: Trigger this manually in CI, set ROLLBACK_VERSION env var.
+  # Example: ROLLBACK_VERSION=v1.2.2
+  # -------------------------------------------------------------------------
+  rollback:
+    - services:
+        - docker
+      stages:
+        - name: rollback-to-version
+          image: tencentcom/ssh
+          imports: https://cnb.cool/ai-alchemy-factory/project-secrets/-/blob/main/firecrawl-lite-ssh.yml
+          settings:
+            host: $REMOTE_HOST
+            port: $REMOTE_PORT
+            username: $REMOTE_USERNAME
+            key: $PRIVATE_KEY
+            script:
+              - |
+                set -eu
+                TARGET_VERSION="${ROLLBACK_VERSION}"
+                
+                if [ -z "${TARGET_VERSION}" ]; then
+                  echo "==> ERROR: ROLLBACK_VERSION not set."
+                  echo "==> Set it in CI environment: ROLLBACK_VERSION=v1.2.2"
+                  exit 1
+                fi
+                
+                IMAGE="docker.cnb.cool/ai-alchemy-factory/firecrawl-lite:${TARGET_VERSION}"
+                
+                echo "==> Rolling back to version ${TARGET_VERSION}"
+                
+                echo "${REGISTRY_TOKEN}" | docker login -u "${REGISTRY_USER}" --password-stdin docker.cnb.cool
+                docker pull "${IMAGE}"
+                
+                docker stop firecrawl-lite || true
+                docker rm firecrawl-lite || true
+                docker run -d -p 80:3000 \
+                  --name firecrawl-lite \
+                  --restart=always \
+                  -e VERSION="${TARGET_VERSION}" \
+                  "${IMAGE}"
+                
+                echo "==> Running health check..."
+                for i in $(seq 1 10); do
+                  if curl -fsS http://127.0.0.1:80/health; then
+                    mkdir -p /opt/firecrawl-lite
+                    echo "${TARGET_VERSION}" > /opt/firecrawl-lite/current_version.txt
+                    echo "==> Rollback successful. Version ${TARGET_VERSION} is live."
+                    exit 0
+                  fi
+                  echo "==> Health check attempt ${i}/10 failed. Retrying..."
+                  sleep 3
+                done
+                
+                echo "==> FATAL: Rollback to ${TARGET_VERSION} failed health check."
+                echo "==> You're on your own now. Good luck."
+                exit 1
+  
+  # -------------------------------------------------------------------------
+  # Check Current Production Version
+  # -------------------------------------------------------------------------
+  check-version:
+    - services:
+        - docker
+      stages:
+        - name: show-current-version
+          image: tencentcom/ssh
+          imports: https://cnb.cool/ai-alchemy-factory/project-secrets/-/blob/main/firecrawl-lite-ssh.yml
+          settings:
+            host: $REMOTE_HOST
+            port: $REMOTE_PORT
+            username: $REMOTE_USERNAME
+            key: $PRIVATE_KEY
+            script:
+              - |
+                set -eu
+                echo "==> Current production version:"
+                cat /opt/firecrawl-lite/current_version.txt 2>/dev/null || echo "Unknown (file not found)"
+                echo ""
+                echo "==> Running container:"
+                docker ps --filter name=firecrawl-lite --format "table {{.Names}}\t{{.Image}}\t{{.Status}}"

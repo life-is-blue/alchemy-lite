@@ -12,7 +12,7 @@ import type { CrawlRequest, CrawlResponse, ScrapeResponse } from '../types.js';
 /**
  * Extract all links from HTML that belong to the same domain
  */
-function extractLinks(html: string, baseUrl: string): string[] {
+function extractLinks(html: string, baseUrl: string, pathPrefix?: string): string[] {
   const $ = cheerio.load(html);
   const base = new URL(baseUrl);
   const links = new Set<string>();
@@ -26,12 +26,15 @@ function extractLinks(html: string, baseUrl: string): string[] {
       const absoluteUrl = new URL(href, baseUrl);
 
       // Only include links from the same domain
-      if (absoluteUrl.hostname === base.hostname) {
-        // Remove hash and query params for deduplication
-        absoluteUrl.hash = '';
-        absoluteUrl.search = '';
-        links.add(absoluteUrl.toString());
-      }
+      if (absoluteUrl.hostname !== base.hostname) return;
+
+      // Optional path prefix filtering
+      if (pathPrefix && !absoluteUrl.pathname.startsWith(pathPrefix)) return;
+
+      // Remove hash and query params for deduplication
+      absoluteUrl.hash = '';
+      absoluteUrl.search = '';
+      links.add(absoluteUrl.toString());
     } catch (error) {
       // Invalid URL, skip
     }
@@ -44,9 +47,9 @@ function extractLinks(html: string, baseUrl: string): string[] {
  * Crawl a website recursively
  */
 export async function crawl(request: CrawlRequest): Promise<CrawlResponse> {
-  const { url, maxDepth, maxPages, renderJS, timeout } = request;
+  const { url, maxDepth, maxPages, renderJS, timeout, pathPrefix } = request;
 
-  logger.info('Starting crawl', { url, maxDepth, maxPages });
+  logger.info('Starting crawl', { url, maxDepth, maxPages, pathPrefix });
 
   const visited = new Set<string>();
   const results: ScrapeResponse[] = [];
@@ -86,7 +89,7 @@ export async function crawl(request: CrawlRequest): Promise<CrawlResponse> {
     }
 
     // Extract links and crawl them
-    const links = extractLinks(result.html, currentUrl);
+    const links = extractLinks(result.html, currentUrl, pathPrefix);
 
     for (const link of links) {
       if (visited.size >= maxPages!) {
