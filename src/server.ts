@@ -14,6 +14,9 @@ const app = express();
 // Middleware
 app.use(express.json());
 
+// Serve static files from public directory
+app.use(express.static('public'));
+
 // Simple request logging
 app.use((req: Request, res: Response, next: NextFunction) => {
   logger.info(`${req.method} ${req.path}`, { ip: req.ip });
@@ -72,8 +75,10 @@ app.post('/crawl', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-// 404 handler
+// 404 handler (must be after all routes)
 app.use((req: Request, res: Response) => {
+  // Static files already handled by express.static
+  // API routes already handled above
   res.status(404).json({ error: 'Not found' });
 });
 
@@ -86,6 +91,7 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
 export function startServer(port: number = 3000): void {
   app.listen(port, () => {
     logger.info(`Firecrawl Lite server started`, { port });
+    logger.info(`Web UI: http://localhost:${port}/`);
     logger.info(`API Key authentication: ${API_KEY ? 'enabled' : 'disabled'}`);
   });
 }
