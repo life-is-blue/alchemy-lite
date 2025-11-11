@@ -1,45 +1,16 @@
 #!/bin/sh
-# 文档同步检查脚本（供人类参考）
-# 这不是自动化，这是提醒清单
+# AI-Assisted Workflow: Verify AI output, don't remind known tasks
 
-echo ""
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "📋 提交前文档同步自查清单"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo ""
-
-# 检查是否改了 API 相关文件
+# API changed but docs not updated → AI might have missed it
 if git diff --cached --name-only | grep -q "src/server.ts"; then
-  echo "⚠️  检测到 src/server.ts 变更"
-  echo "   → README.md 的 API 示例更新了吗？"
-  echo "   → DEPLOYMENT.md 的测试命令更新了吗？"
-  echo ""
-fi
-
-# 检查是否改了启动脚本
-if git diff --cached --name-only | grep -q "package.json"; then
-  if git diff --cached package.json | grep -q '"scripts"'; then
-    echo "📝 检测到 package.json scripts 变更"
-    echo "   → README.md Quick Start 更新了吗？"
-    echo "   → DEPLOYMENT.md 本地开发章节更新了吗？"
-    echo ""
+  if ! git diff --cached --name-only | grep -q "README.md"; then
+    echo "⚠️  src/server.ts changed but README.md not staged (AI miss?)"
   fi
 fi
 
-# 检查是否用了新的环境变量
+# New env var but example not updated → AI might have missed it
 if git diff --cached | grep -q "process.env\\."; then
-  echo "🔧 检测到代码中使用环境变量"
-  echo "   → .env.example 添加示例值了吗？"
-  echo "   → README.md Configuration 章节更新了吗？"
-  echo ""
+  if ! git diff --cached --name-only | grep -q ".env.example"; then
+    echo "⚠️  New env var detected but .env.example not staged (AI miss?)"
+  fi
 fi
-
-# 检查是否改了路由
-if git diff --cached | grep -E "^\+.*app\\.(get|post|put|delete|patch)" > /dev/null 2>&1; then
-  echo "🔍 检测到 API 路由变更"
-  echo "   建议运行: grep -r '旧路径' public/"
-  echo ""
-fi
-
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo ""

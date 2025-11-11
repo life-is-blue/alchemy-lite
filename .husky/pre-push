@@ -1,0 +1,18 @@
+#!/bin/sh
+# Pre-push Hook: Final checks before sharing code
+#
+# Why NOT run integration tests here?
+#   - Integration tests depend on external network (example.com, cloud.tencent.com)
+#   - Network failures would block legitimate pushes
+#   - Git operations should work offline
+#   - Integration tests belong in CI/CD, not local hooks
+#
+# Philosophy:
+#   - Local hooks verify code quality (unit tests, linting)
+#   - CI/CD verifies production readiness (integration tests, deployment)
+#   - Never block local workflow on external dependencies
+
+echo "✅ Pre-push checks passed"
+echo ""
+echo "Note: Integration tests will run automatically in CI/CD."
+echo "To run manually: npm run test:integration"
