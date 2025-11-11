@@ -89,13 +89,20 @@
 
   <!-- Footer -->
   <div class="footer">
-    <div class="footer-content">
-      <a href="https://github.com" target="_blank">GitHub</a> · 
-      <a href="/health" target="_blank">服务状态</a> · 
-      简约而不简单
+    <div class="footer-content" id="footerContent">
+      <a id="githubLink" href="https://github.com" target="_blank">GitHub</a> · 
+      <a id="healthCheckLink" href="/health" target="_blank">服务状态</a> · 
+      <span id="tagline">简约而不简单</span>
     </div>
   </div>
 
+  <script src="/config.js"></script>
   <script src="/app.js"></script>
+  <script>
+    // 初始化footer链接
+    document.getElementById('githubLink').href = AppConfig.get('links.github');
+    document.getElementById('healthCheckLink').href = AppConfig.get('links.healthCheck');
+    document.getElementById('tagline').textContent = AppConfig.get('tagline', '简约而不简单');
+  </script>
 </body>
 </html>
