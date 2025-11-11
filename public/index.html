@@ -97,6 +97,18 @@
   </div>
 
   <script src="/config.js"></script>
+  <script>
+    // API地址配置（由Caddy反向代理统一处理）
+    // 本地开发: http://localhost:8000 → Caddy反向代理
+    //   ├─ /api/* → localhost:3000 (后端)
+    //   └─ /* → localhost:8080 (前端)
+    // 生产环境: https://example.com → Caddy反向代理
+    //   ├─ /api/* → 自有服务器:3000
+    //   └─ /* → Vercel (前端)
+    // 
+    // 前端使用相对路径 '/api/scrape'，反向代理自动转发
+    // 无需设置 window.API_BASE，使用app.js默认的 '/api'
+  </script>
   <script src="/app.js"></script>
   <script>
     // 初始化footer链接

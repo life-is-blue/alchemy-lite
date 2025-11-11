@@ -1,0 +1,15 @@
+# Firecrawl Lite - Development Reverse Proxy
+# Local development: unified domain routing for frontend + API
+# Production: same config structure, only change upstream addresses
+
+:8000 {
+	# API backend - forward to Node.js server on port 3000
+	route /api* {
+		reverse_proxy localhost:3000
+	}
+
+	# Frontend - forward to static server on port 8080
+	route /* {
+		reverse_proxy localhost:8080
+	}
+}
