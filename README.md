@@ -37,46 +37,53 @@ crawler/
 
 ## Quick Start
 
-**开发环境（推荐使用 Caddy）：**
+**Development (with Caddy reverse proxy):**
 
 ```bash
-# 终端 1：启动后端
+# Terminal 1: Start backend
 npm install
 npm run dev
 
-# 终端 2：启动前端
+# Terminal 2: Start frontend
 cd public && python3 -m http.server 8080
 
-# 终端 3：启动反向代理
+# Terminal 3: Start reverse proxy
 caddy run --config Caddyfile
 ```
 
-访问 http://localhost:8000
+Visit http://localhost:8000
 
-**不想用 Caddy？** 直接访问前端 http://localhost:8080，在浏览器 console 设置：
+**Don't want Caddy?** Access frontend directly at http://localhost:8080, set in browser console:
 ```javascript
 window.API_BASE = 'http://localhost:3000/api';
 ```
 
-**详细部署方案**：见 [DEPLOYMENT.md](DEPLOYMENT.md)
+**Detailed deployment guide**: See [DEPLOYMENT.md](DEPLOYMENT.md)
 
 ## Testing
 
 ```bash
-npm test              # Run tests once
-npm run test:watch    # Watch mode for development
+npm test                 # Run unit tests (fast)
+npm run test:integration # Run integration tests (slow, real network requests)
+npm run test:all         # Run all tests
+npm run test:watch       # Watch mode for development
 ```
 
 **Test Structure:**
 ```
 tests/
-├── unit/                 # Unit tests
+├── unit/                        # Unit tests (fast, no external deps)
 │   ├── logger.test.ts
 │   ├── types.test.ts
 │   └── lib/
 │       └── clean-html.test.ts
-└── integration/          # Integration tests (future)
+└── integration/                 # Integration tests (slow, network deps, CI/CD)
+    └── fetch-real-world.test.ts
 ```
+
+**Git Hooks:**
+- `pre-commit`: Runs unit tests (must pass) + code review check
+- `pre-push`: Reminder to run integration tests in CI/CD
 
 ## API
 
