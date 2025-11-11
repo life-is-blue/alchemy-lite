@@ -11,7 +11,8 @@ When building a frontend that calls Firecrawl Lite, follow these principles.
 ```javascript
 async function scrapeUrl(url) {
   try {
-    const response = await fetch('http://api.example.com/scrape', {
+    // Using reverse proxy (same domain) - see DEPLOYMENT.md
+    const response = await fetch('/api/scrape', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url, renderJS: false })
@@ -30,6 +31,14 @@ async function scrapeUrl(url) {
 }
 ```
 
+**For cross-domain deployments** (not recommended):
+```javascript
+const API_BASE = 'https://api.example.com';
+const response = await fetch(`${API_BASE}/api/scrape`, {
+  // ... rest of request
+});
+```
+
 **Why**: Network failures, timeouts, and server errors are normal. Always assume requests can fail.
 
 ---
@@ -42,7 +51,7 @@ async function scrapeWithTimeout(url, timeoutMs = 10000) {
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const response = await fetch('/scrape', {
+    const response = await fetch('/api/scrape', {
       method: 'POST',
       signal: controller.signal,
       body: JSON.stringify({ url, renderJS: false })

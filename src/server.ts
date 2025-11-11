@@ -14,9 +14,6 @@ const app = express();
 // Middleware
 app.use(express.json());
 
-// Serve static files from public directory
-app.use(express.static('public'));
-
 // Simple request logging
 app.use((req: Request, res: Response, next: NextFunction) => {
   logger.info(`${req.method} ${req.path}`, { ip: req.ip });
@@ -42,13 +39,27 @@ function authenticate(req: Request, res: Response, next: NextFunction): void {
   next();
 }
 
+// Root endpoint - API information
+app.get('/', (req: Request, res: Response) => {
+  res.json({
+    name: 'Firecrawl Lite API',
+    version: '1.0.0',
+    endpoints: {
+      health: '/api/health',
+      scrape: '/api/scrape',
+      crawl: '/api/crawl',
+    },
+    docs: 'https://github.com/user/firecrawl-lite',
+  });
+});
+
 // Health check
-app.get('/health', (req: Request, res: Response) => {
+app.get('/api/health', (req: Request, res: Response) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
 // Scrape endpoint
-app.post('/scrape', authenticate, async (req: Request, res: Response) => {
+app.post('/api/scrape', authenticate, async (req: Request, res: Response) => {
   try {
     const request = ScrapeRequestSchema.parse(req.body);
     const result = await scrape(request);
@@ -62,7 +73,7 @@ app.post('/scrape', authenticate, async (req: Request, res: Response) => {
 });
 
 // Crawl endpoint
-app.post('/crawl', authenticate, async (req: Request, res: Response) => {
+app.post('/api/crawl', authenticate, async (req: Request, res: Response) => {
   try {
     const request = CrawlRequestSchema.parse(req.body);
     const result = await crawl(request);
@@ -75,10 +86,8 @@ app.post('/crawl', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-// 404 handler (must be after all routes)
+// Catch-all 404 handler for undefined routes
 app.use((req: Request, res: Response) => {
-  // Static files already handled by express.static
-  // API routes already handled above
   res.status(404).json({ error: 'Not found' });
 });
 
@@ -90,8 +99,9 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
 
 export function startServer(port: number = 3000): void {
   app.listen(port, () => {
-    logger.info(`Firecrawl Lite server started`, { port });
-    logger.info(`Web UI: http://localhost:${port}/`);
+    logger.info(`Firecrawl Lite API server started`, { port });
+    logger.info(`API Endpoints: /api/health, /api/scrape, /api/crawl`);
+    logger.info(`Note: Frontend should be deployed separately (see DEPLOYMENT.md)`);
     logger.info(`API Key authentication: ${API_KEY ? 'enabled' : 'disabled'}`);
   });
 }

@@ -54,7 +54,7 @@ async function scrapeUrl(url, index) {
   const useJs = needsJsRendering(url);
   
   try {
-    const response = await fetch('http://localhost:3000/scrape', {
+    const response = await fetch('http://localhost:3000/api/scrape', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
