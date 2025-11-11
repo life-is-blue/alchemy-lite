@@ -1,6 +1,6 @@
-# Firecrawl Lite - 部署指南
+# Firecrawl Lite - Deployment Guide
 
-## 本地开发
+## Local Development
 
 **快速启动（推荐）：**
 ```bash
@@ -31,40 +31,47 @@ caddy run --config Caddyfile
 
 ---
 
-## 生产部署
+## Production Deployment
 
-### 架构
+### Architecture
+
+**Automated Deployment (via .cnb.yml):**
 
 ```
-用户 → https://example.com
+User → http://server-ip:80
   ↓
-反向代理（Cloudflare/Caddy/Nginx）
-  ├─ /         → 前端静态文件
-  └─ /api/*    → 后端 API
+Caddy Reverse Proxy (Docker container, port 80)
+  ├─ /         → Frontend (Nginx container, internal port 80)
+  └─ /api/*    → Backend (Node.js container, internal port 3000)
 ```
 
-**核心思想：** 一个域名，反向代理路由，前后端独立部署。
+**All 3 containers run on the same server, connected via Docker network.**
+
+**Philosophy:**
+- Single-command deployment: `git tag v1.0.0 && git push --tags`
+- Self-contained: No external dependencies (Cloudflare Pages, etc.)
+- Rollback-friendly: Backend-only rollback preserves frontend
 
 ---
 
-## 部署步骤
+## Deployment Steps
 
-### 第1步：代码改动（已完成）
+### Step 1: Code Changes (Already Done)
 
-前端和后端都已配置完毕：
+Frontend and backend are configured for separation:
 
-**前端改动：**
-- `public/app.js`: API调用使用 `Config.API_BASE` 配置
-- `public/config.js`: healthCheck链接改为 `/api/health`
+**Frontend:**
+- `public/app.js`: Uses `Config.API_BASE` for API calls
+- `public/config.js`: Health check points to `/api/health`
 
-**后端改动：**
-- 删除了 `express.static('public')` - 前端由Cloudflare Pages托管
-- API路由添加 `/api` 前缀：
+**Backend:**
+- Removed `express.static('public')` - Static files served separately
+- API routes use `/api` prefix:
   - `/health` → `/api/health`
   - `/scrape` → `/api/scrape`
   - `/crawl` → `/api/crawl`
 
-### 第2步：本地测试
+### Step 2: Local Testing
 
 **方案 A：使用 Caddy（推荐）**
 ```bash
@@ -92,7 +99,62 @@ cd public && python3 -m http.server 8080
 # 需在浏览器 console 设置: window.API_BASE = 'http://localhost:3000/api'
 ```
 
-### 第3步：部署到Railway
+### Step 3: Automated Production Deployment
+
+**Architecture deployed by `.cnb.yml`:**
+
+1. **Backend Container** (`firecrawl-lite-backend`)
+   - Runs Node.js app from Docker image
+   - Internal network only (no exposed ports)
+   - Connected to `firecrawl-network`
+
+2. **Frontend Container** (`firecrawl-lite-frontend`)
+   - Nginx serving `public/` directory
+   - Files fetched from GitHub release tag
+   - Internal network only
+
+3. **Reverse Proxy** (`firecrawl-lite-proxy`)
+   - Caddy routes traffic:
+     - `/api/*` → Backend container
+     - `/*` → Frontend container
+   - Exposes port 80 to internet
+
+**Deployment process:**
+
+```bash
+# 1. Create a release
+git tag v1.0.0
+git push origin v1.0.0
+
+# 2. CI builds Docker image automatically
+# (see .cnb.yml tag_push workflow)
+
+# 3. Manually trigger deployment in CI
+# Set environment variable: DEPLOY_VERSION=v1.0.0
+# Run manual operation: deploy
+```
+
+**What happens on the server:**
+```bash
+# Pulls image from registry
+docker pull docker.cnb.cool/ai-alchemy-factory/firecrawl-lite:v1.0.0
+
+# Creates Docker network (if not exists)
+docker network create firecrawl-network
+
+# Starts 3 containers:
+# - Backend (no exposed ports)
+# - Frontend (Nginx with public/ files)
+# - Caddy (port 80, routes traffic)
+```
+
+**Access:**
+- Frontend: `http://server-ip/`
+- API: `http://server-ip/api/health`
+
+---
+
+### Step 4 (Alternative): Manual Deployment to Railway
 
 **前提条件：**
 - 有Railway账户（https://railway.app）
@@ -132,162 +194,68 @@ railway open
 # 应该看到类似：https://firecrawl-lite-prod.railway.app
 ```
 
-**记住后端URL：** `https://firecrawl-lite-prod.railway.app`
+---
 
-### 第4步：部署前端到Cloudflare Pages
-
-**方法A：Git自动部署（推荐）**
-
-1. 在GitHub配置中添加仓库
-2. 连接到Cloudflare Pages
-3. 设置构建参数：
-   - Build Command: （留空，前端无需构建）
-   - Output Directory: `public`
-4. 自动部署
-
-**方法B：使用Wrangler CLI**
+### Step 5: Verify Deployment
 
 ```bash
-npm install -g wrangler
+# 1. Test frontend
+curl http://server-ip/
+# Should return HTML (homepage)
 
-wrangler pages deploy public \
-  --project-name=firecrawl-lite \
-  --branch=production
+# 2. Test backend health check
+curl http://server-ip/api/health
+# Should return { "status": "ok", "timestamp": "..." }
+
+# 3. Test full workflow
+# Visit http://server-ip in browser
+# Enter a URL to scrape
+# Check batch results, downloads, etc.
 ```
 
-**获得前端URL：** `https://firecrawl-lite.pages.dev`
-
-### 第5步：配置反向代理
-
-在Cloudflare上，将 `/api/*` 的请求转发到后端。
-
-**选项A：使用Origin Rules（推荐，简单）**
-
-1. Cloudflare Dashboard → 你的域名
-2. Rules → Origin Rules
-3. 创建新规则：
-   ```
-   IF    URI Path 包含 /api
-   THEN  转发到 firecrawl-lite-prod.railway.app
-   ```
-
-**选项B：使用Workers（更灵活）**
-
-```javascript
-// wrangler.toml
-name = "firecrawl-proxy"
-route = "example.com/api/*"
-zone_id = "your_zone_id"
-
-// src/index.ts
-export default {
-  async fetch(request) {
-    try {
-      const url = new URL(request.url);
-      
-      // 仅处理 /api/* 路径
-      if (!url.pathname.startsWith('/api')) {
-        return new Response('Not Found', { status: 404 });
-      }
-      
-      const backend = 'https://firecrawl-lite-prod.railway.app';
-      const backendUrl = `${backend}${url.pathname}${url.search}`;
-      
-      // 直接传递body，保留查询参数
-      const backendRequest = new Request(backendUrl, {
-        method: request.method,
-        headers: request.headers,
-        body: request.body,
-      });
-      
-      return await fetch(backendRequest);
-      
-    } catch (error) {
-      return new Response('Backend unavailable', { status: 502 });
-    }
-  },
-};
-```
-
-部署：
+**Check running containers:**
 ```bash
-wrangler publish
-```
+docker ps | grep firecrawl-lite
 
-**选项C：自建 Caddy/Nginx**
-
-使用 VPS 自建反向代理（与本地开发配置相同）：
-
-```caddyfile
-# Caddyfile
-example.com {
-  route /api* {
-    reverse_proxy https://firecrawl-lite-prod.railway.app
-  }
-  route /* {
-    reverse_proxy https://firecrawl-lite.pages.dev
-  }
-}
-```
-
-或 Nginx：
-```nginx
-server {
-  listen 80;
-  server_name example.com;
-
-  # 完整转发 /api/* 路径（与 Caddy 行为一致）
-  location /api/ {
-    proxy_pass https://firecrawl-lite-prod.railway.app/api/;
-  }
-
-  location / {
-    proxy_pass https://firecrawl-lite.pages.dev;
-  }
-}
-```
-
-### 第6步：验证部署
-
-```bash
-# 1. 测试前端
-curl https://example.com/
-# 应该返回HTML（首页）
-
-# 2. 测试后端健康检查
-curl https://example.com/api/health
-# 应该返回 { "status": "ok", "timestamp": "..." }
-
-# 3. 测试完整流程
-# 在浏览器访问 https://example.com
-# 输入URL进行抓取
-# 检查批量结果、下载等功能
+# Should show 3 containers:
+# firecrawl-lite-backend
+# firecrawl-lite-frontend
+# firecrawl-lite-proxy
 ```
 
 ---
 
-## 常见问题
+## FAQ
 
-### Q1: 为什么删除了前端静态文件服务？
-**A:** 前端现在由Cloudflare Pages托管（CDN加速），后端只负责API逻辑。这样分离更清晰，扩展性更好。
+### Q1: Why are frontend and backend separated?
+**A:** Clear separation of concerns. Backend handles scraping logic, frontend handles UI. Each can scale independently.
 
-### Q2: 本地开发时怎么测试？
-**A:** 三种方式：
-1. **Caddy 反向代理**（推荐）：`caddy run --config Caddyfile`，访问 http://localhost:8000
-2. **直接访问**：前端 8080 + 后端 3000，在浏览器 console 设置 `window.API_BASE = 'http://localhost:3000/api'`
-3. **其他代理**：Nginx、Traefik 等，参考 Caddyfile 配置路由规则
+### Q2: Can I use a custom domain?
+**A:** Yes. Point your domain's A record to the server IP. Caddy will serve on port 80 (or configure SSL with Caddy's automatic HTTPS).
 
-### Q3: 如何修改后端地址？
-**A:** 修改Cloudflare的Origin Rules配置，无需重新部署前端。
+### Q3: How do I enable HTTPS?
+**A:** Modify the Caddyfile in deployment script:
+```caddyfile
+example.com {  # Replace :80 with your domain
+  route /api* {
+    reverse_proxy firecrawl-lite-backend:3000
+  }
+  route /* {
+    reverse_proxy firecrawl-lite-frontend:80
+  }
+}
+```
+Caddy automatically provisions Let's Encrypt certificates.
 
-### Q4: 支持API认证吗？
-**A:** 是的，设置 `API_KEY` 环境变量，后端会检查 `Authorization: Bearer` 头。
+### Q4: How do I rollback?
+**A:** Trigger manual `rollback` operation in CI with `ROLLBACK_VERSION=v1.0.0`. This only restarts the backend container with the old version, keeping frontend and proxy unchanged.
 
-### Q5: 性能如何？
-**A:**
-- 前端：通过Cloudflare CDN，全球加速
-- 后端：Railway服务器，响应时间取决于爬虫耗时（170ms-5s）
-- 中间：Cloudflare边缘计算，毫秒级延迟
+### Q5: Can I deploy to Cloudflare Pages instead?
+**A:** Yes, but you'll need to:
+1. Deploy `public/` to Cloudflare Pages manually
+2. Deploy backend to Railway/VPS
+3. Configure Cloudflare Workers or Origin Rules to route `/api/*` to backend
+(This approach is documented separately in DEPLOYMENT.md Step 4)
 
 ---
 
@@ -327,69 +295,107 @@ Cloudflare Analytics：
 
 ---
 
-## 回滚和更新
+## Updates and Rollbacks
 
-**更新代码：**
+**Update code:**
 ```bash
-git push origin main
-# Railway自动检测并重新部署
+# Create new version tag
+git tag v1.0.1
+git push origin v1.0.1
+
+# CI builds new image automatically
+# Manually trigger 'deploy' operation with DEPLOY_VERSION=v1.0.1
 ```
 
-**更新前端：**
+**Rollback to previous version:**
 ```bash
-git push origin main
-# Cloudflare Pages自动检测并重新部署
+# Trigger 'rollback' operation with ROLLBACK_VERSION=v1.0.0
+# Only backend is replaced, frontend and proxy remain unchanged
 ```
 
-**更新环境变量：**
+**Update environment variables:**
 ```bash
-railway variables set KEY=value
-railway deploy
+# SSH to server
+docker stop firecrawl-lite-backend
+docker rm firecrawl-lite-backend
+docker run -d \
+  --name firecrawl-lite-backend \
+  --network firecrawl-network \
+  --restart=always \
+  -e VERSION="v1.0.0" \
+  -e NEW_VAR="value" \
+  docker.cnb.cool/ai-alchemy-factory/firecrawl-lite:v1.0.0
 ```
 
 ---
 
-## 安全注意事项
+## Security
 
-✅ **已实施：**
-- 前端通过CDN，无法直接访问后端
-- API密钥通过环境变量（不在代码中）
-- Cloudflare提供DDoS防护
+✅ **Implemented:**
+- Backend and frontend isolated via Docker network
+- API keys via environment variables (not in code)
+- Containers run as non-root user
 
-⚠️ **建议：**
-- 定期更换API密钥
-- 监控异常流量
-- 设置合理的速率限制
-- 定期备份配置
+⚠️ **Recommendations:**
+- Use firewall to block direct access to ports 3000, 8080
+- Enable HTTPS with Caddy + Let's Encrypt
+- Rotate API keys periodically
+- Monitor unusual traffic patterns
+- Set rate limits in Caddy configuration
 
 ---
 
-## 故障排查
+## Troubleshooting
 
-### 前端无法访问
-```
-检查步骤：
-1. Cloudflare Pages部署是否成功
-2. 域名DNS是否指向Cloudflare
-3. 访问 https://example.pages.dev （绕过域名）
-```
+### Frontend not accessible
+```bash
+# Check if containers are running
+docker ps | grep firecrawl-lite
 
-### 后端API无法访问
-```
-检查步骤：
-1. Railway deployment是否运行
-2. railway logs 检查错误日志
-3. 测试直接访问 https://firecrawl-lite-prod.railway.app/api/health
-4. 检查Cloudflare Origin Rules配置
+# Check frontend logs
+docker logs firecrawl-lite-frontend
+
+# Test direct access (should work if proxy is down)
+curl http://localhost:8080
 ```
 
-### CORS错误
+### Backend API not accessible
+```bash
+# Check backend logs
+docker logs firecrawl-lite-backend
+
+# Test direct backend access
+docker exec firecrawl-lite-backend wget -O- http://localhost:3000/api/health
+
+# Check if backend is in network
+docker network inspect firecrawl-network
 ```
-同域名部署不应该有CORS错误。
-如果有，检查：
-1. Cloudflare反向代理是否正确配置
-2. 请求头是否被修改
-3. 浏览器console的完整错误信息
+
+### Proxy not routing correctly
+```bash
+# Check Caddy logs
+docker logs firecrawl-lite-proxy
+
+# Verify Caddyfile syntax
+cat /tmp/Caddyfile
+
+# Test proxy manually
+curl -v http://localhost/api/health
+```
+
+### Containers not communicating
+```bash
+# Verify Docker network
+docker network inspect firecrawl-network
+
+# Should show all 3 containers in the network
+
+# Recreate network if needed
+docker network rm firecrawl-network
+docker network create firecrawl-network
+
+# Restart containers to rejoin network
+docker restart firecrawl-lite-backend firecrawl-lite-frontend firecrawl-lite-proxy
 ```
 
 ### 浏览器池耗尽（Browser Pool Exhausted）
@@ -553,33 +559,74 @@ tail -f app.log | grep 'Max'
 
 ---
 
-## 成本估算
+## Cost Estimation
 
-| 服务 | 成本 | 说明 |
-|------|------|------|
-| Cloudflare Pages | 免费 | 无限带宽和请求 |
-| Cloudflare Workers | $0~$5/月 | 免费：10万请求/天，超出$0.50/百万请求 |
-| Railway | $5~$20/月 | 1GB内存起（Puppeteer要求），免费512MB不够 |
-| 域名 | $10-15/年 | 可选，使用pages.dev免费域名 |
-| **总计** | **$5~$30/月** | Puppeteer内存密集，不推荐免费套餐 |
+**Self-hosted VPS:**
 
-**注意：**
-- Railway免费套餐：512MB内存，**不足以运行默认配置**（需600+MB）
-- 推荐最低配置：1GB内存，$5/月起
-- 如需降低成本，设置 `MAX_BROWSERS=2`，但性能会下降
-- Cloudflare Workers: 日均请求 < 10万则完全免费
+| Item | Cost | Notes |
+|------|------|-------|
+| VPS (1GB RAM) | $5-10/month | DigitalOcean, Linode, Vultr |
+| VPS (2GB RAM) | $10-20/month | Recommended for Puppeteer |
+| Domain | $10-15/year | Optional, can use IP address |
+| **Total** | **$5-20/month** | Puppeteer requires at least 1GB RAM |
+
+**Managed Platform (Railway/Render):**
+
+| Item | Cost | Notes |
+|------|------|-------|
+| Railway (1GB RAM) | $5-10/month | Auto-scaling |
+| Render (1GB RAM) | $7/month | Fixed price |
+| Domain | $10-15/year | Optional |
+| **Total** | **$5-15/month** | Easier to manage, less control |
+
+**Hybrid (Cloudflare + VPS):**
+
+| Item | Cost | Notes |
+|------|------|-------|
+| Cloudflare Pages | Free | Unlimited bandwidth |
+| Cloudflare Workers | $0-5/month | 100k req/day free |
+| VPS for backend | $5-10/month | 1GB RAM minimum |
+| **Total** | **$5-15/month** | Best performance, CDN included |
+
+**Notes:**
+- Free tier VPS (512MB) not recommended - Puppeteer needs 600MB+
+- Reduce cost: Set `MAX_BROWSERS=2` (trades performance for memory)
+- Self-hosted gives full control but requires more setup
 
 ---
 
-## 后续改进
+## Architecture Diagram
 
-- [ ] 添加数据库（PostgreSQL）保存爬虫结果
-- [ ] 实现用户认证和历史记录
-- [ ] 添加爬虫任务队列和调度
-- [ ] 性能监控和告警
-- [ ] 多语言支持
-- [ ] 移动端优化
+```
+Internet
+   ↓
+Port 80 (Public)
+   ↓
+┌─────────────────────────────────────────────┐
+│ Caddy Reverse Proxy (firecrawl-lite-proxy) │
+│ - Routes /api/* to backend                  │
+│ - Routes /* to frontend                     │
+└─────────────┬───────────────────────────────┘
+              │
+      Docker Network (firecrawl-network)
+              │
+    ┌─────────┴──────────┐
+    │                    │
+    ▼                    ▼
+┌─────────┐      ┌──────────────┐
+│ Backend │      │   Frontend   │
+│ Node.js │      │    Nginx     │
+│ Port    │      │  Serves      │
+│ 3000    │      │  public/     │
+│ (API)   │      │  Port 80     │
+└─────────┘      └──────────────┘
+```
 
----
+**Deployment is complete when you see:**
+```
+==> Backend:  http://localhost:3000/api/health
+==> Frontend: http://localhost:8080
+==> Proxy:    http://localhost:80
+```
 
-**部署完毕后，你的应用将在世界各地以极速运行！** 🚀
+**Access your app at:** `http://server-ip/`
