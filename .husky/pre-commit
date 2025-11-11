@@ -1,3 +1,6 @@
+# 文档同步提醒（非阻塞）
+.husky/doc-sync-check
+
 # Run tests before commit
 npm test
 
