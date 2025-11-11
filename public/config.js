@@ -13,7 +13,7 @@ const AppConfig = {
   
   // 外部链接
   links: {
-    github: 'https://github.com',
+    github: 'https://cnb.cool/ai-alchemy-factory/firecrawl-lite',
     healthCheck: '/health',
   },
   
@@ -103,11 +103,3 @@ const AppConfig = {
     obj[lastKey] = value;
   },
 };
-
-// 如果有环境变量，进行覆盖
-if (typeof window !== 'undefined') {
-  // DEV环境特殊配置
-  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-    AppConfig.set('links.github', 'https://github.com/ai-alchemy-factory/firecrawl-lite');
-  }
-}
