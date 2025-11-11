@@ -1,40 +1,15 @@
 # Frontend Files
 
-This directory contains the web UI for Firecrawl Lite.
+静态前端文件，由后端 API 调用。
 
-## Deployment
-
-The backend API no longer serves these static files.
-Frontend should be deployed separately to Cloudflare Pages.
-
-See [DEPLOYMENT.md](../DEPLOYMENT.md) for complete deployment instructions.
-
-## Local Development
-
-For local testing, you can run a simple HTTP server:
-
-```bash
-# Option 1: Using npx serve
-npx serve public
-
-# Option 2: Using Python
-python3 -m http.server 8080 --directory public
-
-# Option 3: Using Node.js http-server
-npx http-server public -p 8080
-```
-
-Then set the API base URL in browser console:
-
-```javascript
-window.API_BASE = 'http://localhost:3000/api';
-```
+**本地开发**：见根目录 [README.md](../README.md)  
+**部署**：见 [DEPLOYMENT.md](../DEPLOYMENT.md)
 
 ## Files
 
-- `index.html` - Main UI entry point
-- `app.js` - Frontend application logic
-- `config.js` - Application configuration
-- `styles.css` - UI styles
-- `icons.svg` - SVG icons
-- `image.png` - Logo/image assets
+- `index.html` - UI 入口
+- `app.js` - 前端逻辑
+- `config.js` - API 配置
+- `styles.css` - UI 样式
+- `icons.svg` - SVG 图标
+- `image.png` - Logo 资源
