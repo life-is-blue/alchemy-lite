@@ -159,32 +159,3 @@ describe('fetchAndParse - Error Handling', () => {
     ).rejects.toThrow();
   });
 });
-
-describe('fetchAndParse - Real World Tests', () => {
-  // Note: These tests depend on external network and should be moved to
-  // integration tests or made optional in CI/CD environments
-  
-  it.skip('should fetch from example.com', async () => {
-    const result = await fetchAndParse({ 
-      url: 'https://example.com',
-      timeout: 10000 
-    });
-    
-    expect(result).toBeDefined();
-    expect(result.markdown).toContain('Example Domain');
-  }, 15000);
-
-  it.skip('should handle gzip from real website', async () => {
-    // Tencent Cloud docs (known to use gzip)
-    const result = await fetchAndParse({ 
-      url: 'https://cloud.tencent.com/document/product/1759/122982',
-      timeout: 10000 
-    });
-    
-    expect(result).toBeDefined();
-    expect(result.markdown).toContain('腾讯云');
-    expect(result.markdown.length).toBeGreaterThan(100);
-    // Should be valid text, not binary garbage
-    expect(result.markdown).toMatch(/[\u4e00-\u9fa5]/); // Contains Chinese characters
-  }, 15000);
-});
