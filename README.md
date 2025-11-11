@@ -37,9 +37,28 @@ crawler/
 
 ## Quick Start
 
+**开发环境（推荐使用 Caddy）：**
+
 ```bash
-npm install && npm run build && npm start
+# 终端 1：启动后端
+npm install
+npm run dev
+
+# 终端 2：启动前端
+cd public && python3 -m http.server 8080
+
+# 终端 3：启动反向代理
+caddy run --config Caddyfile
 ```
+
+访问 http://localhost:8000
+
+**不想用 Caddy？** 直接访问前端 http://localhost:8080，在浏览器 console 设置：
+```javascript
+window.API_BASE = 'http://localhost:3000/api';
+```
+
+**详细部署方案**：见 [DEPLOYMENT.md](DEPLOYMENT.md)
 
 ## Testing
 

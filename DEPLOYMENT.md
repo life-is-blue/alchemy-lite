@@ -1,21 +1,49 @@
-# Firecrawl Lite - 前后端分离部署指南
+# Firecrawl Lite - 部署指南
 
-## 架构概览
+## 本地开发
+
+**快速启动（推荐）：**
+```bash
+# 终端 1：启动后端
+npm run dev
+
+# 终端 2：启动前端
+cd public && python3 -m http.server 8080
+
+# 终端 3：启动反向代理（可选，统一入口）
+caddy run --config Caddyfile
+```
+
+**访问地址：**
+- 使用 Caddy：http://localhost:8000（推荐）
+- 直接访问：前端 http://localhost:8080 + 后端 http://localhost:3000
+
+**Caddy 配置说明（Caddyfile）：**
+```caddyfile
+:8000 {
+  route /api* { reverse_proxy localhost:3000 }
+  route /*     { reverse_proxy localhost:8080 }
+}
+```
+- 监听 8000 端口
+- `/api/*` 转发到后端，`/*` 转发到前端
+- 无需手动配置 CORS
+
+---
+
+## 生产部署
+
+### 架构
 
 ```
-用户请求 → https://example.com
+用户 → https://example.com
   ↓
-Cloudflare 边缘节点 (反向代理)
-  ├─ /         → Cloudflare Pages (前端)
-  └─ /api/*    → Railway Backend (后端API)
+反向代理（Cloudflare/Caddy/Nginx）
+  ├─ /         → 前端静态文件
+  └─ /api/*    → 后端 API
 ```
 
-**优点：**
-- 一个域名，用户体验统一
-- 无CORS问题
-- 后端API不暴露
-- Cloudflare CDN加速前端
-- 易于扩展和维护
+**核心思想：** 一个域名，反向代理路由，前后端独立部署。
 
 ---
 
@@ -38,13 +66,30 @@ Cloudflare 边缘节点 (反向代理)
 
 ### 第2步：本地测试
 
+**方案 A：使用 Caddy（推荐）**
 ```bash
-# 本地运行后端
-npm run build
-npm start
-# 访问 http://localhost:3000 会收到API信息（JSON格式）
-# 访问 http://localhost:3000/index.html 会收到 404（前端已移除）
-# 访问 http://localhost:3000/api/health 会收到 { "status": "ok", "timestamp": "..." }
+# 终端 1：启动后端
+npm run dev
+
+# 终端 2：启动前端
+cd public && python3 -m http.server 8080
+
+# 终端 3：启动 Caddy 反向代理
+caddy run --config Caddyfile
+
+# 访问 http://localhost:8000
+# 前端: http://localhost:8000/
+# API: http://localhost:8000/api/health
+```
+
+**方案 B：分别访问**
+```bash
+npm run dev
+# 后端 http://localhost:3000/api/health
+
+cd public && python3 -m http.server 8080
+# 前端 http://localhost:8080
+# 需在浏览器 console 设置: window.API_BASE = 'http://localhost:3000/api'
 ```
 
 ### 第3步：部署到Railway
@@ -169,6 +214,39 @@ export default {
 wrangler publish
 ```
 
+**选项C：自建 Caddy/Nginx**
+
+使用 VPS 自建反向代理（与本地开发配置相同）：
+
+```caddyfile
+# Caddyfile
+example.com {
+  route /api* {
+    reverse_proxy https://firecrawl-lite-prod.railway.app
+  }
+  route /* {
+    reverse_proxy https://firecrawl-lite.pages.dev
+  }
+}
+```
+
+或 Nginx：
+```nginx
+server {
+  listen 80;
+  server_name example.com;
+
+  # 完整转发 /api/* 路径（与 Caddy 行为一致）
+  location /api/ {
+    proxy_pass https://firecrawl-lite-prod.railway.app/api/;
+  }
+
+  location / {
+    proxy_pass https://firecrawl-lite.pages.dev;
+  }
+}
+```
+
 ### 第6步：验证部署
 
 ```bash
@@ -194,11 +272,10 @@ curl https://example.com/api/health
 **A:** 前端现在由Cloudflare Pages托管（CDN加速），后端只负责API逻辑。这样分离更清晰，扩展性更好。
 
 ### Q2: 本地开发时怎么测试？
-**A:** 本地运行后端时，前端可以连接到 `http://localhost:3000/api`：
-```javascript
-// 在浏览器console中
-window.API_BASE = 'http://localhost:3000/api';
-```
+**A:** 三种方式：
+1. **Caddy 反向代理**（推荐）：`caddy run --config Caddyfile`，访问 http://localhost:8000
+2. **直接访问**：前端 8080 + 后端 3000，在浏览器 console 设置 `window.API_BASE = 'http://localhost:3000/api'`
+3. **其他代理**：Nginx、Traefik 等，参考 Caddyfile 配置路由规则
 
 ### Q3: 如何修改后端地址？
 **A:** 修改Cloudflare的Origin Rules配置，无需重新部署前端。
