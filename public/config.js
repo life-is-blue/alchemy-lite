@@ -14,7 +14,7 @@ const AppConfig = {
   // 外部链接
   links: {
     github: 'https://cnb.cool/ai-alchemy-factory/firecrawl-lite',
-    healthCheck: '/health',
+    healthCheck: '/api/health',  // 改为API路由前缀
   },
   
   // 功能配置

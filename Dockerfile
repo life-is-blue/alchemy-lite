@@ -41,6 +41,8 @@ RUN addgroup -g 1001 -S nodejs && \
 
 WORKDIR /app
 
+# Note: public/ is NOT copied intentionally
+# Frontend is deployed separately to Cloudflare Pages (see DEPLOYMENT.md)
 # Copy built application
 COPY --from=builder --chown=nodejs:nodejs /app/dist ./dist
 COPY --from=builder --chown=nodejs:nodejs /app/node_modules ./node_modules

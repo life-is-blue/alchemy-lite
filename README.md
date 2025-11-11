@@ -61,18 +61,20 @@ tests/
 
 ## API
 
-**POST /scrape** - Convert URL to Markdown
+> **Note**: API endpoints are prefixed with `/api`. See [DEPLOYMENT.md](DEPLOYMENT.md) for how this works with frontend separation.
+
+**POST /api/scrape** - Convert URL to Markdown
 ```json
 {"url": "https://example.com", "renderJS": false, "autoClickTabs": false}
 ```
 
-**POST /crawl** - Recursive crawl with limits
+**POST /api/crawl** - Recursive crawl with limits
 ```json
 {"url": "https://example.com", "maxDepth": 2, "maxPages": 10, "pathPrefix": "/docs/"}
 ```
 - `pathPrefix` (optional): Only crawl URLs matching this path prefix
 
-**GET /health** - Health check
+**GET /api/health** - Health check
 
 ## Production Features
 
@@ -106,21 +108,6 @@ API_KEY=                 # Optional auth (leave empty to disable)
 - JavaScript sites: ~5s avg (use only when needed)
 - Test first: most content is available without JS rendering
 
-## API
-
-**POST /scrape** - Convert URL to Markdown
-```json
-{"url": "https://example.com", "renderJS": false, "autoClickTabs": false}
-```
-
-**POST /crawl** - Recursive crawl with limits
-```json
-{"url": "https://example.com", "maxDepth": 2, "maxPages": 10, "pathPrefix": "/docs/"}
-```
-- `pathPrefix` (optional): Only crawl URLs matching this path prefix
-
-**GET /health** - Health check
-
 See **FRONTEND.md** for integration patterns and client-side best practices.
 
 ## Troubleshooting (Quick Reference)
@@ -133,7 +120,7 @@ See **FRONTEND.md** for integration patterns and client-side best practices.
 | Website blocks us | Not our bug. Website anti-bot protection. |
 | Missing content | Try `renderJS: true` then `autoClickTabs: true` |
 
-See **DEPLOY.md** for detailed troubleshooting guide.
+See **DEPLOYMENT.md** for deployment guide and detailed troubleshooting.
 
 ## Known Limitations
 
@@ -147,13 +134,13 @@ Use the `/crawl` endpoint to build local knowledge bases:
 
 ```bash
 # Example: Crawl entire site
-curl -X POST http://localhost:3000/crawl \
+curl -X POST http://localhost:3000/api/crawl \
   -H "Content-Type: application/json" \
   -d '{"url": "https://docs.example.com", "maxDepth": 3, "maxPages": 200}' \
   > docs.json
 
 # Example: Crawl specific path only (e.g., /zh/build/ directory)
-curl -X POST http://localhost:3000/crawl \
+curl -X POST http://localhost:3000/api/crawl \
   -H "Content-Type: application/json" \
   -d '{"url": "https://docs.example.com/zh/build/", "pathPrefix": "/zh/build/", "maxPages": 50}' \
   > build-docs.json
@@ -170,7 +157,7 @@ cat docs.json | jq -r '.pages[].markdown' | grep -i "keyword"
 
 ```bash
 # Phase 1: Extract complete link map (1 page × 5s, JS rendered)
-curl -X POST http://localhost:3000/scrape \
+curl -X POST http://localhost:3000/api/scrape \
   -H "Content-Type: application/json" \
   -d '{"url": "https://docs.example.com/guide/", "renderJS": true}' \
   | jq -r '.html' \
@@ -179,7 +166,7 @@ curl -X POST http://localhost:3000/scrape \
 
 # Phase 2: Batch crawl all discovered links (N pages × 170ms, static)
 while IFS= read -r link; do
-  curl -s -X POST http://localhost:3000/scrape \
+  curl -s -X POST http://localhost:3000/api/scrape \
     -H "Content-Type: application/json" \
     -d "{\"url\": \"https://docs.example.com$link\"}"
 done < links.txt | jq -s '.' > full-docs.json

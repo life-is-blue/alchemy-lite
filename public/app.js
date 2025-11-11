@@ -7,6 +7,10 @@ const Config = {
   get REQUEST_TIMEOUT() { return AppConfig.get('features.requestTimeout', 30000); },
   get PROGRESS_DEBOUNCE() { return AppConfig.get('ui.progressDebounce', 100); },
   get BUTTON_SUCCESS_DURATION() { return AppConfig.get('ui.buttonSuccessDuration', 2000); },
+  get API_BASE() { 
+    // 默认使用同域反向代理，可在页面中覆盖 window.API_BASE
+    return window.API_BASE || '/api';
+  },
 };
 
 // Timeout追踪列表（用于cleanup）
@@ -269,7 +273,7 @@ async function scrapeURL(url, options = {}) {
   const timeoutId = setTimeout(() => controller.abort(), timeout);
   
   try {
-    const response = await fetch('/scrape', {
+    const response = await fetch(`${Config.API_BASE}/scrape`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
