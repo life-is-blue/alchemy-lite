@@ -1,6 +1,30 @@
+# Dependencies
 node_modules/
+
+# Build output
 dist/
+
+# Logs
 *.log
+npm-debug.log*
+
+# OS files
 .DS_Store
+Thumbs.db
+
+# Environment variables
+.env
+.env.local
+.env.production
+
+# Test output
 tests/output/
+
+# Pre-commit approval
 .approved-commit
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo

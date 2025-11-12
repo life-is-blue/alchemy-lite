@@ -55,8 +55,8 @@ COPY --from=builder --chown=nodejs:nodejs /app/package.json ./
 COPY --from=builder --chown=nodejs:nodejs /app/public ./public
 
 # Copy Caddy config and entrypoint script
-COPY --chown=nodejs:nodejs Caddyfile.prod /etc/caddy/Caddyfile
-COPY --chown=nodejs:nodejs docker-entrypoint.sh /app/
+COPY --chown=nodejs:nodejs config/Caddyfile.prod /etc/caddy/Caddyfile
+COPY --chown=nodejs:nodejs config/docker-entrypoint.sh /app/
 RUN chmod +x /app/docker-entrypoint.sh
 
 # Grant Caddy permission to bind to privileged ports (80, 443) as non-root user

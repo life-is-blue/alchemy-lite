@@ -11,7 +11,7 @@ npm run dev
 cd public && python3 -m http.server 8080
 
 # 终端 3：启动反向代理（可选，统一入口）
-caddy run --config Caddyfile
+caddy run --config config/Caddyfile
 ```
 
 **访问地址：**
@@ -38,7 +38,7 @@ caddy run --config Caddyfile
 **Single-Container Architecture (via .cnb.yml):**
 
 ```
-User → https://izoa.fun (HTTPS with auto SSL)
+User → https://YOUR_DOMAIN (HTTPS with auto SSL)
   ↓
 Docker Container (firecrawl-lite)
   ├─ Caddy Reverse Proxy (ports 80 + 443)
@@ -111,10 +111,10 @@ cd public && python3 -m http.server 8080
 1. **DNS Configuration**
    ```bash
    # Set A record for your domain
-   izoa.fun → <Your-VPS-IP>
+   your-domain.com → <Your-VPS-IP>
    
    # Verify DNS propagation
-   dig izoa.fun +short
+   dig your-domain.com +short
    # Should return your VPS IP
    ```
 
@@ -178,9 +178,9 @@ docker run -d \
 ```
 
 **Access:**
-- Frontend: `https://izoa.fun/`
-- API: `https://izoa.fun/api/health`
-- HTTP: `http://izoa.fun/` (auto-redirects to HTTPS)
+- Frontend: `https://your-domain.com/`
+- API: `https://your-domain.com/api/health`
+- HTTP: `http://your-domain.com/` (auto-redirects to HTTPS)
 
 ---
 
@@ -235,7 +235,7 @@ docker ps | grep firecrawl-lite
 
 # Should show 1 container:
 # CONTAINER ID   IMAGE                                              PORTS                        NAMES
-# abc123...      docker.cnb.cool/.../firecrawl-lite:v1.0.0         0.0.0.0:80->80, 443->443     firecrawl-lite
+# abc123...      docker.cnb.cool/ai-alchemy-factory/firecrawl-lite:v1.0.0           0.0.0.0:80->80, 443->443     firecrawl-lite
 ```
 
 **Check SSL certificate:**
@@ -245,32 +245,32 @@ docker logs firecrawl-lite | grep -i certificate
 
 # Should see lines like:
 # [INFO] certificate obtained successfully
-# [INFO] Serving HTTPS on https://izoa.fun
+# [INFO] Serving HTTPS on https://your-domain.com
 ```
 
 **Test HTTPS endpoints:**
 ```bash
 # 3. Test HTTPS health check
-curl https://izoa.fun/api/health
+curl https://your-domain.com/api/health
 # Should return: {"status":"ok","timestamp":"...","version":"v1.0.0"}
 
 # 4. Verify SSL certificate
-curl -vI https://izoa.fun 2>&1 | grep -i "issuer"
+curl -vI https://your-domain.com 2>&1 | grep -i "issuer"
 # Should show: issuer: C=US; O=Let's Encrypt; CN=...
 
 # 5. Test HTTP redirect
-curl -I http://izoa.fun
+curl -I http://your-domain.com
 # Should return: HTTP/1.1 308 Permanent Redirect
-#                Location: https://izoa.fun/
+#                Location: https://your-domain.com/
 
 # 6. Test frontend
-curl https://izoa.fun/
+curl https://your-domain.com/
 # Should return HTML (homepage with <!DOCTYPE html>...)
 ```
 
 **Test in browser:**
 ```bash
-# Visit https://izoa.fun in browser
+# Visit https://your-domain.com in browser
 # - Should show green lock icon (valid SSL)
 # - Enter a URL to scrape
 # - Check batch results, downloads, etc.
@@ -282,7 +282,7 @@ curl https://izoa.fun/
 
 ### Q1: How does HTTPS work automatically?
 **A:** Caddy handles everything:
-- Detects the domain name (`izoa.fun`) in Caddyfile
+- Detects the domain name (`your-domain.com`) in Caddyfile
 - Automatically requests certificate from Let's Encrypt
 - Renews certificates before expiration (90-day cycle)
 - Redirects HTTP to HTTPS automatically
@@ -291,7 +291,7 @@ curl https://izoa.fun/
 **A:** Check these common issues:
 ```bash
 # 1. DNS not pointing to server
-dig izoa.fun +short  # Should return your VPS IP
+dig your-domain.com +short  # Should return your VPS IP
 
 # 2. Ports not accessible
 nc -zv <server-ip> 80
@@ -639,7 +639,7 @@ tail -f app.log | grep 'Max'
 |------|------|-------|
 | VPS (1GB RAM) | $5-10/month | DigitalOcean, Linode, Vultr |
 | VPS (2GB RAM) | $10-20/month | Recommended for Puppeteer |
-| Domain (izoa.fun) | $10-15/year | Already owned |
+| Domain (your-domain.com) | $10-15/year | Already owned |
 | SSL Certificate | **Free** | Let's Encrypt via Caddy |
 | **Total** | **$5-20/month** | Puppeteer requires at least 1GB RAM |
 
@@ -666,7 +666,7 @@ tail -f app.log | grep 'Max'
 ```
 Internet
    ↓
-DNS (izoa.fun)
+DNS (your-domain.com)
    ↓
 Ports 80 (HTTP) + 443 (HTTPS)
    ↓
@@ -702,8 +702,8 @@ CONTAINER ID   IMAGE                                    PORTS                   
 abc123...      ...firecrawl-lite:v1.0.0                0.0.0.0:80->80, 443->443 firecrawl-lite
 
 ==> Access your app at:
-    https://izoa.fun/ (HTTPS - recommended)
-    http://izoa.fun/  (HTTP - redirects to HTTPS)
+    https://your-domain.com/ (HTTPS - recommended)
+    http://your-domain.com/  (HTTP - redirects to HTTPS)
 ```
 
 **Process tree inside container:**

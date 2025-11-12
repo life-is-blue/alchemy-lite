@@ -1,7 +1,8 @@
 # Firecrawl Lite - Production Caddyfile
 # Auto-HTTPS enabled: Caddy will automatically obtain Let's Encrypt certificates
+# Set DOMAIN environment variable before running (e.g., DOMAIN=example.com)
 
-izoa.fun {
+{$DOMAIN:localhost} {
 	# Automatic HTTPS features:
 	# - Obtains certificates from Let's Encrypt/ZeroSSL
 	# - Redirects HTTP (port 80) to HTTPS (port 443)

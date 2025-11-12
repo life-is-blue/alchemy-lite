@@ -48,7 +48,7 @@ npm run dev
 cd public && python3 -m http.server 8080
 
 # Terminal 3: Start reverse proxy
-caddy run --config Caddyfile
+caddy run --config config/Caddyfile
 ```
 
 Visit http://localhost:8000
@@ -58,7 +58,7 @@ Visit http://localhost:8000
 window.API_BASE = 'http://localhost:3000/api';
 ```
 
-**Detailed deployment guide**: See [DEPLOYMENT.md](DEPLOYMENT.md)
+**Detailed deployment guide**: See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
 
 ## Testing
 
