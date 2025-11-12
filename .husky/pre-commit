@@ -22,6 +22,13 @@ npm test || {
   exit 1
 }
 
+# 1.5 Build must succeed (TypeScript compilation catches type errors)
+echo "▶ Building TypeScript..."
+npm run build || {
+  echo "❌ Build failed (TypeScript compilation errors)"
+  exit 1
+}
+
 # 2. Code review required (AI doesn't understand business logic)
 if [ ! -f ".approved-commit" ]; then
   echo "❌ No code review approval"

@@ -7,6 +7,16 @@
 #   3. Build and Deploy are SEPARATED. Build on tag, deploy manually.
 #   4. You MUST be able to rollback. Always.
 #   5. Keep it simple, stupid.
+#
+# Parameter Management:
+#   - Build stage: Zero env dependencies (pure compilation)
+#   - Deploy stage: All secrets via imports (not from .env)
+#   - No over-parameterization: Only essential variables
+#
+# How to Deploy (Manual):
+#   1. Tag a release: git tag v1.2.3 && git push origin v1.2.3
+#   2. CI builds and pushes Docker image
+#   3. Manually trigger deploy in CNB with DEPLOY_VERSION=v1.2.3
 # ============================================================================
 
 # ============================================================================
@@ -109,14 +119,44 @@ main:
 # ============================================================================
 # Manual Operations
 # ============================================================================
+#
+# Deployment Parameter Management:
+#   - All secrets (SSH keys, registry tokens) are imported via `imports`
+#   - The imports file (firecrawl-lite-ssh.yml) is stored in project-secrets
+#   - Variables provided by imports:
+#       * ${REMOTE_HOST}       - Target server IP/hostname
+#       * ${REMOTE_USERNAME}   - SSH user (usually root)
+#       * ${REMOTE_PORT}       - SSH port (default 22)
+#       * ${PRIVATE_KEY}       - SSH private key (for authentication)
+#       * ${REGISTRY_TOKEN}    - Docker registry auth token
+#       * ${REGISTRY_USER}     - Docker registry username
+#
+# To set up:
+#   1. Create firecrawl-lite-ssh.yml in project-secrets
+#   2. Define the environment variables above in that file
+#   3. Set DEPLOY_SECRETS_IMPORTS variable to point to that file
+# ============================================================================
 
 $:
   # -------------------------------------------------------------------------
   # Manual Deploy to Production
   # -------------------------------------------------------------------------
-  # Usage: Trigger this manually in CI, set DEPLOY_VERSION env var.
-  # Example: DEPLOY_VERSION=v1.2.3
-  # This deploys a previously built image to production.
+  # How it works:
+  #   1. Previous tag push built and pushed Docker image to registry
+  #   2. This operation pulls that image and deploys to production server
+  #   3. Verifies deployment with health checks (backend + HTTPS)
+  #
+  # Prerequisites:
+  #   - Docker image exists in registry: docker.cnb.cool/ai-alchemy-factory/firecrawl-lite:${VERSION}
+  #   - SSH keys and credentials are in imports (project-secrets)
+  #   - DNS already pointing to production server
+  #
+  # Trigger manually with:
+  #   DEPLOY_VERSION=v1.2.3 (set this environment variable, then run)
+  #
+  # Parameters from imports (no need to set):
+  #   ${REMOTE_HOST}, ${REMOTE_USERNAME}, ${PRIVATE_KEY}, ${REMOTE_PORT}
+  #   ${REGISTRY_TOKEN}, ${REGISTRY_USER}, ${DOMAIN}
   # -------------------------------------------------------------------------
   deploy:
     - services:

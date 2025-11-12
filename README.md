@@ -141,10 +141,12 @@ Parameters:
 ```bash
 PORT=3000                 # Server port
 MAX_BROWSERS=5           # Concurrent browser instances
-MAX_CRAWL_DEPTH=3        # Crawl depth limit
-MAX_CRAWL_PAGES=50       # Total pages limit
 API_KEY=                 # Optional auth (leave empty to disable)
 ```
+
+**API Request Parameters** (set per-request, not via environment):
+- `maxDepth`: Crawl depth limit (default: 3, max recommended: 10)
+- `maxPages`: Total pages limit (default: 50, max recommended: 500)
 
 ## Performance Notes
 
