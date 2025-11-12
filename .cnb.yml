@@ -92,33 +92,50 @@ main:
             npm test
             npm run build
             echo "==> Release build complete."
-            # Export VERSION for next stages
-            printf "%s" "${VERSION}"
+            # Export VERSION and COMMIT_SHA for next stages
+            # Format: VER|SHA (pipe-separated to avoid conflicts)
+            COMMIT_SHA=$(git rev-parse HEAD 2>/dev/null) || {
+              echo "==> FATAL: Failed to get commit SHA from git" >&2
+              exit 1
+            }
           exports:
-            stdout: RELEASE_VERSION
+            stdout: BUILD_META
         
         - name: build-and-push-release
           image: docker:24-cli
           script: |
             set -eu
-            VERSION="${RELEASE_VERSION}"
-            if [ -z "${VERSION}" ]; then
-              echo "==> FATAL: RELEASE_VERSION not set by previous stage" >&2
+            # Parse BUILD_META from previous stage (format: VERSION|COMMIT_SHA)
+            if [ -z "${BUILD_META}" ]; then
+              echo "==> FATAL: BUILD_META not set by previous stage" >&2
+              exit 1
+            fi
+            VERSION=$(echo "${BUILD_META}" | cut -d'|' -f1)
+            COMMIT_SHA=$(echo "${BUILD_META}" | cut -d'|' -f2)
+            
+            if [ -z "${VERSION}" ] || [ -z "${COMMIT_SHA}" ]; then
+              echo "==> FATAL: Failed to parse VERSION or COMMIT_SHA from BUILD_META" >&2
               exit 1
             fi
             
             IMAGE_TAG="${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}:${VERSION}"
             LATEST_TAG="${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}:latest"
+            BUILD_TIME=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
             
             echo "==> Building production image for version ${VERSION}" >&2
             echo "${CNB_TOKEN}" | docker login -u "${CNB_TOKEN_USER_NAME}" --password-stdin "${CNB_DOCKER_REGISTRY}" >&2
             docker pull "${LATEST_TAG}" >&2 || true
             export DOCKER_BUILDKIT=1
+            
+            # Build OCI-compliant image with proper metadata labels
+            # org.opencontainers.image.version = semantic version (e.g., v1.6.8)
+            # org.opencontainers.image.revision = commit SHA (immutable source identifier per OCI spec)
+            # org.opencontainers.image.created = build timestamp (ISO 8601 format)
             docker build \
               --build-arg VERSION="${VERSION}" \
               --label "org.opencontainers.image.version=${VERSION}" \
-              --label "org.opencontainers.image.revision=${CNB_COMMIT_SHA}" \
-              --label "org.opencontainers.image.created=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+              --label "org.opencontainers.image.revision=${COMMIT_SHA}" \
+              --label "org.opencontainers.image.created=${BUILD_TIME}" \
               --cache-from "${LATEST_TAG}" \
               -t "${IMAGE_TAG}" \
               -t "${LATEST_TAG}" . >&2
@@ -127,10 +144,10 @@ main:
             echo "==> Pushed: ${IMAGE_TAG}" >&2
             echo "==> Pushed: ${LATEST_TAG}" >&2
             echo "==> Build complete. Auto-deploying to production..." >&2
-            # Re-export VERSION for next stage
-            printf "%s" "${VERSION}"
+            # Re-export BUILD_META for next stage
+            printf "%s" "${BUILD_META}"
           exports:
-            stdout: RELEASE_VERSION
+            stdout: BUILD_META
         
         - name: auto-deploy-to-production
           image: cnbcool/ssh
@@ -142,9 +159,16 @@ main:
             port: ${REMOTE_PORT}
             command_timeout: 5m
             script: |
-              VERSION="${RELEASE_VERSION}"
-              if [ -z "${VERSION}" ]; then
-                echo "==> ERROR: RELEASE_VERSION is not set."
+              # Parse BUILD_META from previous stage (format: VERSION|COMMIT_SHA)
+              if [ -z "${BUILD_META}" ]; then
+                echo "==> ERROR: BUILD_META is not set."
+                exit 1
+              fi
+              VERSION=$(echo "${BUILD_META}" | cut -d'|' -f1)
+              COMMIT_SHA=$(echo "${BUILD_META}" | cut -d'|' -f2)
+              
+              if [ -z "${VERSION}" ] || [ -z "${COMMIT_SHA}" ]; then
+                echo "==> ERROR: Failed to parse VERSION or COMMIT_SHA from BUILD_META" >&2
                 exit 1
               fi
               
@@ -190,6 +214,9 @@ main:
               echo "==> ✓ Version verified: ${IMAGE_VERSION}" >&2
               
               # ============================================================
+              # NOTE: This deployment block is duplicated in the deploy-to-production stage.
+              #       CNB does not support shared functions between stages, so the logic must
+              #       be duplicated. Keep both sections in sync when making changes!
               # Deploy Single Container (Backend + Caddy + Frontend)
               # ============================================================
               echo "==> Deploying Firecrawl Lite (single container with HTTPS)"
@@ -230,19 +257,21 @@ main:
                 exit 1
               fi
               
-              # Wait for backend to be ready (max 10 seconds)
+              # Wait for backend to be ready (max 10 seconds with retry)
               echo "==> Waiting for backend to be ready..."
+              BACKEND_READY=false
               for i in $(seq 1 10); do
                 if docker exec firecrawl-lite curl -sf http://localhost:3000/api/health >/dev/null 2>&1; then
-                  echo "==> Backend is ready"
+                  echo "==> ✓ Backend is ready"
+                  BACKEND_READY=true
                   break
                 fi
                 sleep 1
               done
               
-              # Check backend health
-              if ! docker exec firecrawl-lite curl -sf http://localhost:3000/api/health >/dev/null 2>&1; then
-                echo "==> ERROR: Backend health check failed"
+              # Verify backend became healthy
+              if [ "$BACKEND_READY" = false ]; then
+                echo "==> ERROR: Backend failed to become healthy within 10 seconds" >&2
                 docker logs --tail 50 firecrawl-lite
                 exit 1
               fi
@@ -357,6 +386,9 @@ $:
               docker pull "${IMAGE}"
               
               # ============================================================
+              # NOTE: This deployment block is duplicated in the auto-deploy-to-production stage.
+              #       CNB does not support shared functions between stages, so the logic must
+              #       be duplicated. Keep both sections in sync when making changes!
               # Deploy Single Container (Backend + Caddy + Frontend)
               # ============================================================
               echo "==> Deploying Firecrawl Lite (single container with HTTPS)"
@@ -397,19 +429,21 @@ $:
                 exit 1
               fi
               
-              # Wait for backend to be ready (max 10 seconds)
+              # Wait for backend to be ready (max 10 seconds with retry)
               echo "==> Waiting for backend to be ready..."
+              BACKEND_READY=false
               for i in $(seq 1 10); do
                 if docker exec firecrawl-lite curl -sf http://localhost:3000/api/health >/dev/null 2>&1; then
-                  echo "==> Backend is ready"
+                  echo "==> ✓ Backend is ready"
+                  BACKEND_READY=true
                   break
                 fi
                 sleep 1
               done
               
-              # Check backend health
-              if ! docker exec firecrawl-lite curl -sf http://localhost:3000/api/health >/dev/null 2>&1; then
-                echo "==> ERROR: Backend health check failed"
+              # Verify backend became healthy
+              if [ "$BACKEND_READY" = false ]; then
+                echo "==> ERROR: Backend failed to become healthy within 10 seconds" >&2
                 docker logs --tail 50 firecrawl-lite
                 exit 1
               fi
@@ -467,7 +501,7 @@ $:
       stages:
         - name: rollback-to-version
           image: cnbcool/ssh
-          imports: ${DEPLOY_SECRETS_IMPORTS}
+          imports: https://cnb.cool/ai-alchemy-factory/project-secrets/-/blob/main/firecrawl-lite-ssh.yml
           settings:
             host: ${REMOTE_HOST}
             username: ${REMOTE_USERNAME}
@@ -526,7 +560,7 @@ $:
       stages:
         - name: show-current-version
           image: cnbcool/ssh
-          imports: ${DEPLOY_SECRETS_IMPORTS}
+          imports: https://cnb.cool/ai-alchemy-factory/project-secrets/-/blob/main/firecrawl-lite-ssh.yml
           settings:
             host: ${REMOTE_HOST}
             username: ${REMOTE_USERNAME}
