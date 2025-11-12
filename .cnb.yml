@@ -13,19 +13,15 @@
 #   - Deploy stage: All secrets via imports (not from .env)
 #   - No over-parameterization: Only essential variables
 #
-# How to Deploy (Manual):
-#   1. Tag a release: git tag v1.2.3 && git push origin v1.2.3
-#   2. CI builds and pushes Docker image
-#   3. Manually trigger deploy in CNB with DEPLOY_VERSION=v1.2.3
+# How to Deploy:
+#   1. Tag: git tag v1.2.3 && git push origin v1.2.3
+#   2. CI builds and pushes Docker image (auto-deploys to production)
+#   3. Manual deploy/rollback: Set DEPLOY_VERSION=v1.2.3 and trigger deploy/rollback
 # ============================================================================
 
 # ============================================================================
 # Branch Push: Build and Test Only - DO NOT DEPLOY
 # ============================================================================
-# Every push to main triggers CI, but does NOT touch production.
-# This is a sanity check. If tests fail, fix your damn code.
-# ============================================================================
-
 main:
   push:
     - services:
@@ -39,11 +35,11 @@ main:
         - name: test-and-build
           script: |
             set -eu
-            echo "==> Running tests. If this fails, don't even think about releasing."
+            echo "==> Running tests. If this fails, don't even think about releasing." >&2
             npm ci
             npm test
             npm run build
-            echo "==> Tests passed. Build artifacts ready."
+            echo "==> Tests passed. Build artifacts ready." >&2
         
         - name: build-dev-image
           image: docker:24-cli
@@ -51,24 +47,15 @@ main:
             set -eu
             DEV_TAG="${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}:dev-$(date +%Y%m%d-%H%M%S)"
             
-            echo "==> Building dev image: ${DEV_TAG}"
+            echo "==> Building dev image: ${DEV_TAG}" >&2
             echo "${CNB_TOKEN}" | docker login -u "${CNB_TOKEN_USER_NAME}" --password-stdin "${CNB_DOCKER_REGISTRY}"
             docker build -t "${DEV_TAG}" .
             docker push "${DEV_TAG}"
-            echo "==> Dev image pushed. Use this for staging/testing, NOT production."
+            echo "==> Dev image pushed. Use this for staging/testing, NOT production." >&2
 
 # ============================================================================
 # Tag Push: Build Release Image & Auto-Deploy
 # ============================================================================
-# When ready to release, tag it: git tag v1.2.3 && git push origin v1.2.3
-# This automatically:
-#   1. Builds and tests the code
-#   2. Pushes Docker image to registry
-#   3. Deploys to production
-#
-# Pattern: "v*.*.*" matches semantic version tags like v1.2.3, v2.0.0, etc.
-# ============================================================================
-
 "v*.*.*":
   tag_push:
     - services:
@@ -84,53 +71,48 @@ main:
             set -eu
             VERSION="${CNB_BRANCH}"
             if [ -z "${VERSION}" ]; then
-              echo "==> FATAL: CNB_BRANCH is not set. This should never happen."
+              echo "==> FATAL: CNB_BRANCH is not set. This should never happen." >&2
               exit 1
             fi
-            echo "==> Building release ${VERSION}"
+            
+            echo "==> Building release ${VERSION}" >&2
             npm ci
             npm test
             npm run build
-            echo "==> Release build complete."
-            # Export VERSION and COMMIT_SHA for next stages
-            # Format: VER|SHA (pipe-separated to avoid conflicts)
+            echo "==> Release build complete." >&2
+            
+            # Write version and commit SHA to workspace (cross-stage persistence)
             COMMIT_SHA=$(git rev-parse HEAD 2>/dev/null) || {
               echo "==> FATAL: Failed to get commit SHA from git" >&2
               exit 1
             }
-          exports:
-            stdout: BUILD_META
+            printf "%s" "${VERSION}" > /workspace/.version
+            printf "%s" "${COMMIT_SHA}" > /workspace/.commit
+            echo "==> Saved VERSION=${VERSION}, COMMIT=${COMMIT_SHA} to workspace" >&2
         
         - name: build-and-push-release
           image: docker:24-cli
           script: |
             set -eu
-            # Parse BUILD_META from previous stage (format: VERSION|COMMIT_SHA)
-            if [ -z "${BUILD_META}" ]; then
-              echo "==> FATAL: BUILD_META not set by previous stage" >&2
-              exit 1
-            fi
-            VERSION=$(echo "${BUILD_META}" | cut -d'|' -f1)
-            COMMIT_SHA=$(echo "${BUILD_META}" | cut -d'|' -f2)
             
-            if [ -z "${VERSION}" ] || [ -z "${COMMIT_SHA}" ]; then
-              echo "==> FATAL: Failed to parse VERSION or COMMIT_SHA from BUILD_META" >&2
+            # Read from workspace (reliable cross-stage data transfer)
+            if [ ! -f /workspace/.version ] || [ ! -f /workspace/.commit ]; then
+              echo "==> FATAL: Version or commit file not found in workspace" >&2
               exit 1
             fi
+            VERSION=$(cat /workspace/.version)
+            COMMIT_SHA=$(cat /workspace/.commit)
             
             IMAGE_TAG="${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}:${VERSION}"
             LATEST_TAG="${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}:latest"
             BUILD_TIME=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
             
             echo "==> Building production image for version ${VERSION}" >&2
-            echo "${CNB_TOKEN}" | docker login -u "${CNB_TOKEN_USER_NAME}" --password-stdin "${CNB_DOCKER_REGISTRY}" >&2
-            docker pull "${LATEST_TAG}" >&2 || true
+            echo "${CNB_TOKEN}" | docker login -u "${CNB_TOKEN_USER_NAME}" --password-stdin "${CNB_DOCKER_REGISTRY}"
+            docker pull "${LATEST_TAG}" || true
             export DOCKER_BUILDKIT=1
             
             # Build OCI-compliant image with proper metadata labels
-            # org.opencontainers.image.version = semantic version (e.g., v1.6.8)
-            # org.opencontainers.image.revision = commit SHA (immutable source identifier per OCI spec)
-            # org.opencontainers.image.created = build timestamp (ISO 8601 format)
             docker build \
               --build-arg VERSION="${VERSION}" \
               --label "org.opencontainers.image.version=${VERSION}" \
@@ -138,16 +120,150 @@ main:
               --label "org.opencontainers.image.created=${BUILD_TIME}" \
               --cache-from "${LATEST_TAG}" \
               -t "${IMAGE_TAG}" \
-              -t "${LATEST_TAG}" . >&2
-            docker push "${IMAGE_TAG}" >&2
-            docker push "${LATEST_TAG}" >&2
+              -t "${LATEST_TAG}" .
+            
+            docker push "${IMAGE_TAG}"
+            docker push "${LATEST_TAG}"
             echo "==> Pushed: ${IMAGE_TAG}" >&2
             echo "==> Pushed: ${LATEST_TAG}" >&2
             echo "==> Build complete. Auto-deploying to production..." >&2
-            # Re-export BUILD_META for next stage
-            printf "%s" "${BUILD_META}"
-          exports:
-            stdout: BUILD_META
+        
+        - name: prepare-deploy-script
+          script: |
+            set -eu
+            # Create deployment script once, use it everywhere
+            cat > /workspace/deploy.sh <<'DEPLOY_SCRIPT_EOF'
+#!/bin/sh
+set -eu
+
+VERSION="$1"
+IMAGE="docker.cnb.cool/ai-alchemy-factory/firecrawl-lite:${VERSION}"
+
+echo "==> Deploying Firecrawl Lite version ${VERSION}" >&2
+
+# Login to registry
+echo "${REGISTRY_TOKEN}" | docker login -u "${REGISTRY_USER}" --password-stdin docker.cnb.cool || {
+  echo "==> ERROR: Failed to authenticate with docker registry" >&2
+  exit 1
+}
+
+# Pull and verify image
+echo "==> Pulling image: ${IMAGE}" >&2
+docker pull "${IMAGE}" || {
+  echo "==> ERROR: Failed to pull image ${IMAGE}" >&2
+  exit 1
+}
+
+# Verify version from image OCI label
+echo "==> Verifying version from image metadata..." >&2
+INSPECT_JSON=$(docker inspect "${IMAGE}" 2>/dev/null) || {
+  echo "==> ERROR: Failed to inspect image ${IMAGE}" >&2
+  exit 1
+}
+
+IMAGE_VERSION=$(echo "${INSPECT_JSON}" | jq -r '.[0].Config.Labels["org.opencontainers.image.version"] // empty')
+
+if [ -z "${IMAGE_VERSION}" ]; then
+  echo "==> ERROR: Image version label not found" >&2
+  exit 1
+fi
+
+if [ "${IMAGE_VERSION}" != "${VERSION}" ]; then
+  echo "==> ERROR: Version mismatch! Expected: ${VERSION}, Got: ${IMAGE_VERSION}" >&2
+  exit 1
+fi
+
+echo "==> ✓ Version verified: ${IMAGE_VERSION}" >&2
+
+# Deploy single container (backend + caddy + frontend)
+echo "==> Deploying container..." >&2
+
+# Create persistent volume for SSL certificates
+mkdir -p /opt/firecrawl-lite/caddy-data
+chmod 700 /opt/firecrawl-lite/caddy-data
+
+# Stop and remove old containers
+docker stop firecrawl-lite 2>/dev/null || true
+docker rm firecrawl-lite 2>/dev/null || true
+
+# Clean up old 3-container architecture if exists
+docker stop firecrawl-lite-backend firecrawl-lite-frontend firecrawl-lite-proxy 2>/dev/null || true
+docker rm firecrawl-lite-backend firecrawl-lite-frontend firecrawl-lite-proxy 2>/dev/null || true
+docker network rm firecrawl-network 2>/dev/null || true
+
+# Start new container
+docker run -d \
+  -p 80:80 \
+  -p 443:443 \
+  --name firecrawl-lite \
+  --restart=always \
+  -v /opt/firecrawl-lite/caddy-data:/data \
+  -e VERSION="${VERSION}" \
+  "${IMAGE}"
+
+# Verify deployment
+echo "==> Waiting for container to start..." >&2
+sleep 5
+
+if ! docker ps | grep -q firecrawl-lite; then
+  echo "==> ERROR: Container failed to start" >&2
+  docker logs --tail 50 firecrawl-lite >&2
+  exit 1
+fi
+
+# Wait for backend health
+echo "==> Waiting for backend to be ready..." >&2
+BACKEND_READY=false
+for i in $(seq 1 10); do
+  if docker exec firecrawl-lite curl -sf http://localhost:3000/api/health >/dev/null 2>&1; then
+    echo "==> ✓ Backend is ready" >&2
+    BACKEND_READY=true
+    break
+  fi
+  sleep 1
+done
+
+if [ "$BACKEND_READY" = false ]; then
+  echo "==> ERROR: Backend failed to become healthy within 10 seconds" >&2
+  docker logs --tail 50 firecrawl-lite >&2
+  exit 1
+fi
+
+# Wait for HTTPS (Let's Encrypt can be slow)
+echo "==> Waiting for Caddy to obtain SSL certificate..." >&2
+sleep 5
+
+HTTPS_OK=false
+for i in $(seq 1 12); do
+  if curl -f --max-time 5 "https://${DOMAIN}/api/health" >/dev/null 2>&1; then
+    echo "==> ✓ HTTPS is working (SSL certificate obtained)" >&2
+    HTTPS_OK=true
+    break
+  fi
+  echo "==> Attempt $i/12: HTTPS not ready yet..." >&2
+  sleep 5
+done
+
+if [ "$HTTPS_OK" = false ]; then
+  echo "==> ✗ ERROR: HTTPS failed after 60 seconds" >&2
+  echo "==> Possible issues:" >&2
+  echo "    1. DNS not pointing to this server (check: dig ${DOMAIN})" >&2
+  echo "    2. Ports 80/443 not accessible (check firewall)" >&2
+  echo "    3. Let's Encrypt rate limit hit" >&2
+  echo "" >&2
+  echo "==> Container logs:" >&2
+  docker logs --tail 50 firecrawl-lite | grep -i "acme\|certificate\|error" || docker logs --tail 50 firecrawl-lite >&2
+  exit 1
+fi
+
+echo "==> ✓ Deployment complete" >&2
+docker ps | grep firecrawl-lite >&2
+echo "" >&2
+echo "==> Access: https://${DOMAIN}/" >&2
+echo "==> Check SSL: docker logs firecrawl-lite | grep -i certificate" >&2
+DEPLOY_SCRIPT_EOF
+            chmod +x /workspace/deploy.sh
+            echo "==> Deploy script created at /workspace/deploy.sh" >&2
         
         - name: auto-deploy-to-production
           image: cnbcool/ssh
@@ -159,207 +275,186 @@ main:
             port: ${REMOTE_PORT}
             command_timeout: 5m
             script: |
-              # Parse BUILD_META from previous stage (format: VERSION|COMMIT_SHA)
-              if [ -z "${BUILD_META}" ]; then
-                echo "==> ERROR: BUILD_META is not set."
-                exit 1
-              fi
-              VERSION=$(echo "${BUILD_META}" | cut -d'|' -f1)
-              COMMIT_SHA=$(echo "${BUILD_META}" | cut -d'|' -f2)
+              set -eu
               
-              if [ -z "${VERSION}" ] || [ -z "${COMMIT_SHA}" ]; then
-                echo "==> ERROR: Failed to parse VERSION or COMMIT_SHA from BUILD_META" >&2
+              # Verify DOMAIN is set (MUST be provided by imports)
+              if [ -z "${DOMAIN:-}" ]; then
+                echo "==> ERROR: DOMAIN environment variable not set in imports file" >&2
+                echo "==> Add DOMAIN to firecrawl-lite-ssh.yml" >&2
                 exit 1
               fi
               
-              IMAGE="docker.cnb.cool/ai-alchemy-factory/firecrawl-lite:${VERSION}"
-              
-              # Login to registry
-              echo "==> Authenticating with docker registry..." >&2
-              echo "${REGISTRY_TOKEN}" | docker login -u "${REGISTRY_USER}" --password-stdin docker.cnb.cool >&2 || {
-                echo "==> ERROR: Failed to authenticate with docker registry" >&2
-                exit 1
-              }
-              
-              # Pull and verify image
-              echo "==> Pulling image: ${IMAGE}" >&2
-              docker pull "${IMAGE}" >&2 || {
-                echo "==> ERROR: Failed to pull image ${IMAGE}" >&2
-                exit 1
-              }
-              
-              # Extract and verify version from image OCI label
-              echo "==> Verifying version from image metadata..." >&2
-              INSPECT_JSON=$(docker inspect "${IMAGE}" 2>/dev/null) || {
-                echo "==> ERROR: Failed to inspect image ${IMAGE}" >&2
-                exit 1
-              }
-              
-              # Extract version from OCI label: look for org.opencontainers.image.version: "v1.2.3"
-              IMAGE_VERSION=$(echo "${INSPECT_JSON}" | jq -r '.[0].Config.Labels["org.opencontainers.image.version"] // empty')
-              
-              if [ -z "${IMAGE_VERSION}" ]; then
-                echo "==> ERROR: Image version label not found" >&2
-                echo "==> Image must be built with: --label org.opencontainers.image.version=<VERSION>" >&2
+              # Read version from workspace
+              if [ ! -f /workspace/.version ]; then
+                echo "==> ERROR: /workspace/.version not found" >&2
                 exit 1
               fi
+              VERSION=$(cat /workspace/.version)
               
-              if [ "${IMAGE_VERSION}" != "${VERSION}" ]; then
-                echo "==> ERROR: Version mismatch!" >&2
-                echo "    Expected: ${VERSION}" >&2
-                echo "    Got from image: ${IMAGE_VERSION}" >&2
-                exit 1
-              fi
+              echo "==> Auto-deploying version ${VERSION} to production" >&2
               
-              echo "==> ✓ Version verified: ${IMAGE_VERSION}" >&2
-              
-              # ============================================================
-              # NOTE: This deployment block is duplicated in the deploy-to-production stage.
-              #       CNB does not support shared functions between stages, so the logic must
-              #       be duplicated. Keep both sections in sync when making changes!
-              # Deploy Single Container (Backend + Caddy + Frontend)
-              # ============================================================
-              echo "==> Deploying Firecrawl Lite (single container with HTTPS)"
-              
-              # Create persistent volume for SSL certificates (secure permissions)
-              mkdir -p /opt/firecrawl-lite/caddy-data
-              chmod 700 /opt/firecrawl-lite/caddy-data
-              
-              # Stop and remove old container(s)
-              docker stop firecrawl-lite 2>/dev/null || true
-              docker rm firecrawl-lite 2>/dev/null || true
-              
-              # Also clean up old 3-container architecture if exists
-              docker stop firecrawl-lite-backend firecrawl-lite-frontend firecrawl-lite-proxy 2>/dev/null || true
-              docker rm firecrawl-lite-backend firecrawl-lite-frontend firecrawl-lite-proxy 2>/dev/null || true
-              docker network rm firecrawl-network 2>/dev/null || true
-              
-              # Deploy single container
-              docker run -d \
-                -p 80:80 \
-                -p 443:443 \
-                --name firecrawl-lite \
-                --restart=always \
-                -v /opt/firecrawl-lite/caddy-data:/data \
-                -e VERSION="${VERSION}" \
-                "${IMAGE}"
-              
-              # ============================================================
-              # Verify deployment with health checks
-              # ============================================================
-              echo "==> Waiting for container to start..."
-              sleep 5
-              
-              # Check if container is running
-              if ! docker ps | grep -q firecrawl-lite; then
-                echo "==> ERROR: Container failed to start"
-                docker logs --tail 50 firecrawl-lite
-                exit 1
-              fi
-              
-              # Wait for backend to be ready (max 10 seconds with retry)
-              echo "==> Waiting for backend to be ready..."
-              BACKEND_READY=false
-              for i in $(seq 1 10); do
-                if docker exec firecrawl-lite curl -sf http://localhost:3000/api/health >/dev/null 2>&1; then
-                  echo "==> ✓ Backend is ready"
-                  BACKEND_READY=true
-                  break
-                fi
-                sleep 1
-              done
-              
-              # Verify backend became healthy
-              if [ "$BACKEND_READY" = false ]; then
-                echo "==> ERROR: Backend failed to become healthy within 10 seconds" >&2
-                docker logs --tail 50 firecrawl-lite
-                exit 1
-              fi
-              
-              # Wait for Caddy to start and test HTTPS (with retry)
-              echo "==> Waiting for Caddy to start and obtain SSL certificate..."
-              sleep 5
-              
-              # Try HTTPS for up to 60 seconds (Let's Encrypt can be slow)
-              HTTPS_OK=false
-              for i in $(seq 1 12); do
-                if curl -f --max-time 5 https://${DOMAIN:-your-domain.com}/api/health >/dev/null 2>&1; then
-                  echo "==> ✓ HTTPS is working (SSL certificate obtained)"
-                  HTTPS_OK=true
-                  break
-                fi
-                echo "==> Attempt $i/12: HTTPS not ready yet..."
-                sleep 5
-              done
-              
-              # If HTTPS failed, check logs and exit
-              if [ "$HTTPS_OK" = false ]; then
-                echo "==> ✗ ERROR: HTTPS failed after 60 seconds"
-                echo "==> This usually means:"
-                echo "    1. DNS not pointing to this server (check: dig ${DOMAIN:-your-domain.com})"
-                echo "    2. Ports 80/443 not accessible (check firewall)"
-                echo "    3. Let's Encrypt rate limit hit"
-                echo ""
-                echo "==> Container logs (last 50 lines):"
-                docker logs --tail 50 firecrawl-lite | grep -i "acme\|certificate\|error" || docker logs --tail 50 firecrawl-lite
-                exit 1
-              fi
-              
-              echo "==> ✓ Deployment complete"
-              echo "==> Container status:"
-              docker ps | grep firecrawl-lite
-              echo ""
-              echo "==> Access your app at:"
-              echo "    https://${DOMAIN:-your-domain.com}/ (HTTPS - recommended)"
-              echo "    http://${DOMAIN:-your-domain.com}/  (HTTP - redirects to HTTPS)"
-              echo ""
-              echo "==> Check SSL certificate:"
-              echo "    docker logs firecrawl-lite | grep -i certificate"
+              # Execute deployment script
+              sh /workspace/deploy.sh "${VERSION}"
 
 # ============================================================================
 # Manual Operations
 # ============================================================================
-#
-# Deployment Parameter Management:
-#   - All secrets (SSH keys, registry tokens) are imported via `imports`
-#   - The imports file (firecrawl-lite-ssh.yml) is stored in project-secrets
-#   - Variables provided by imports:
-#       * ${REMOTE_HOST}       - Target server IP/hostname
-#       * ${REMOTE_USERNAME}   - SSH user (usually root)
-#       * ${REMOTE_PORT}       - SSH port (default 22)
-#       * ${PRIVATE_KEY}       - SSH private key (for authentication)
-#       * ${REGISTRY_TOKEN}    - Docker registry auth token
-#       * ${REGISTRY_USER}     - Docker registry username
-#
-# To set up:
-#   1. Create firecrawl-lite-ssh.yml in project-secrets
-#   2. Define the environment variables above in that file
-#   3. Set DEPLOY_SECRETS_IMPORTS variable to point to that file
+# Required variables in firecrawl-lite-ssh.yml:
+#   - REMOTE_HOST       : Target server IP/hostname
+#   - REMOTE_USERNAME   : SSH user (usually root)
+#   - REMOTE_PORT       : SSH port (default 22)
+#   - PRIVATE_KEY       : SSH private key
+#   - REGISTRY_TOKEN    : Docker registry auth token
+#   - REGISTRY_USER     : Docker registry username
+#   - DOMAIN            : Your domain (e.g., firecrawl.yourdomain.com)
 # ============================================================================
-
 $:
   # -------------------------------------------------------------------------
   # Manual Deploy to Production (Emergency/Specific Version)
   # -------------------------------------------------------------------------
-  # NOTE: Normally deployments happen automatically when you push a tag.
-  #       Use this only for emergency rollback or deploying a specific version.
-  #
-  # How it works:
-  #   1. Requires explicit DEPLOY_VERSION environment variable
-  #   2. Pulls specified Docker image from registry
-  #   3. Deploys to production server with health checks
-  #
-  # Trigger manually with:
-  #   Set DEPLOY_VERSION=v1.2.3 environment variable, then run this operation
-  #
-  # Parameters from imports (auto-loaded):
-  #   ${REMOTE_HOST}, ${REMOTE_USERNAME}, ${PRIVATE_KEY}, ${REMOTE_PORT}
-  #   ${REGISTRY_TOKEN}, ${REGISTRY_USER}, ${DOMAIN}
+  # Usage: Set DEPLOY_VERSION=v1.2.3 and trigger this operation
   # -------------------------------------------------------------------------
   deploy:
     - services:
         - docker
       stages:
+        - name: prepare-deploy-script
+          script: |
+            set -eu
+            # Reuse the same deployment script
+            cat > /workspace/deploy.sh <<'DEPLOY_SCRIPT_EOF'
+#!/bin/sh
+set -eu
+
+VERSION="$1"
+IMAGE="docker.cnb.cool/ai-alchemy-factory/firecrawl-lite:${VERSION}"
+
+echo "==> Deploying Firecrawl Lite version ${VERSION}" >&2
+
+# Login to registry
+echo "${REGISTRY_TOKEN}" | docker login -u "${REGISTRY_USER}" --password-stdin docker.cnb.cool || {
+  echo "==> ERROR: Failed to authenticate with docker registry" >&2
+  exit 1
+}
+
+# Pull and verify image
+echo "==> Pulling image: ${IMAGE}" >&2
+docker pull "${IMAGE}" || {
+  echo "==> ERROR: Failed to pull image ${IMAGE}" >&2
+  exit 1
+}
+
+# Verify version from image OCI label
+echo "==> Verifying version from image metadata..." >&2
+INSPECT_JSON=$(docker inspect "${IMAGE}" 2>/dev/null) || {
+  echo "==> ERROR: Failed to inspect image ${IMAGE}" >&2
+  exit 1
+}
+
+IMAGE_VERSION=$(echo "${INSPECT_JSON}" | jq -r '.[0].Config.Labels["org.opencontainers.image.version"] // empty')
+
+if [ -z "${IMAGE_VERSION}" ]; then
+  echo "==> ERROR: Image version label not found" >&2
+  exit 1
+fi
+
+if [ "${IMAGE_VERSION}" != "${VERSION}" ]; then
+  echo "==> ERROR: Version mismatch! Expected: ${VERSION}, Got: ${IMAGE_VERSION}" >&2
+  exit 1
+fi
+
+echo "==> ✓ Version verified: ${IMAGE_VERSION}" >&2
+
+# Deploy single container (backend + caddy + frontend)
+echo "==> Deploying container..." >&2
+
+# Create persistent volume for SSL certificates
+mkdir -p /opt/firecrawl-lite/caddy-data
+chmod 700 /opt/firecrawl-lite/caddy-data
+
+# Stop and remove old containers
+docker stop firecrawl-lite 2>/dev/null || true
+docker rm firecrawl-lite 2>/dev/null || true
+
+# Clean up old 3-container architecture if exists
+docker stop firecrawl-lite-backend firecrawl-lite-frontend firecrawl-lite-proxy 2>/dev/null || true
+docker rm firecrawl-lite-backend firecrawl-lite-frontend firecrawl-lite-proxy 2>/dev/null || true
+docker network rm firecrawl-network 2>/dev/null || true
+
+# Start new container
+docker run -d \
+  -p 80:80 \
+  -p 443:443 \
+  --name firecrawl-lite \
+  --restart=always \
+  -v /opt/firecrawl-lite/caddy-data:/data \
+  -e VERSION="${VERSION}" \
+  "${IMAGE}"
+
+# Verify deployment
+echo "==> Waiting for container to start..." >&2
+sleep 5
+
+if ! docker ps | grep -q firecrawl-lite; then
+  echo "==> ERROR: Container failed to start" >&2
+  docker logs --tail 50 firecrawl-lite >&2
+  exit 1
+fi
+
+# Wait for backend health
+echo "==> Waiting for backend to be ready..." >&2
+BACKEND_READY=false
+for i in $(seq 1 10); do
+  if docker exec firecrawl-lite curl -sf http://localhost:3000/api/health >/dev/null 2>&1; then
+    echo "==> ✓ Backend is ready" >&2
+    BACKEND_READY=true
+    break
+  fi
+  sleep 1
+done
+
+if [ "$BACKEND_READY" = false ]; then
+  echo "==> ERROR: Backend failed to become healthy within 10 seconds" >&2
+  docker logs --tail 50 firecrawl-lite >&2
+  exit 1
+fi
+
+# Wait for HTTPS (Let's Encrypt can be slow)
+echo "==> Waiting for Caddy to obtain SSL certificate..." >&2
+sleep 5
+
+HTTPS_OK=false
+for i in $(seq 1 12); do
+  if curl -f --max-time 5 "https://${DOMAIN}/api/health" >/dev/null 2>&1; then
+    echo "==> ✓ HTTPS is working (SSL certificate obtained)" >&2
+    HTTPS_OK=true
+    break
+  fi
+  echo "==> Attempt $i/12: HTTPS not ready yet..." >&2
+  sleep 5
+done
+
+if [ "$HTTPS_OK" = false ]; then
+  echo "==> ✗ ERROR: HTTPS failed after 60 seconds" >&2
+  echo "==> Possible issues:" >&2
+  echo "    1. DNS not pointing to this server (check: dig ${DOMAIN})" >&2
+  echo "    2. Ports 80/443 not accessible (check firewall)" >&2
+  echo "    3. Let's Encrypt rate limit hit" >&2
+  echo "" >&2
+  echo "==> Container logs:" >&2
+  docker logs --tail 50 firecrawl-lite | grep -i "acme\|certificate\|error" || docker logs --tail 50 firecrawl-lite >&2
+  exit 1
+fi
+
+echo "==> ✓ Deployment complete" >&2
+docker ps | grep firecrawl-lite >&2
+echo "" >&2
+echo "==> Access: https://${DOMAIN}/" >&2
+echo "==> Check SSL: docker logs firecrawl-lite | grep -i certificate" >&2
+DEPLOY_SCRIPT_EOF
+            chmod +x /workspace/deploy.sh
+            echo "==> Deploy script created at /workspace/deploy.sh" >&2
+        
         - name: deploy-to-production
           image: cnbcool/ssh
           imports: https://cnb.cool/ai-alchemy-factory/project-secrets/-/blob/main/firecrawl-lite-ssh.yml
@@ -370,130 +465,30 @@ $:
             port: ${REMOTE_PORT}
             command_timeout: 5m
             script: |
+              set -eu
+              
               VERSION="${DEPLOY_VERSION:-}"
               if [ -z "${VERSION}" ]; then
-                echo "==> ERROR: DEPLOY_VERSION environment variable not set."
-                echo "==> Usage: trigger this manually and set DEPLOY_VERSION=v1.2.3"
+                echo "==> ERROR: DEPLOY_VERSION environment variable not set." >&2
+                echo "==> Usage: trigger this manually and set DEPLOY_VERSION=v1.2.3" >&2
                 exit 1
               fi
               
-              IMAGE="docker.cnb.cool/ai-alchemy-factory/firecrawl-lite:${VERSION}"
-              
-              echo "==> Deploying version ${VERSION}"
-              
-              # Login to registry
-              echo "${REGISTRY_TOKEN}" | docker login -u "${REGISTRY_USER}" --password-stdin docker.cnb.cool
-              docker pull "${IMAGE}"
-              
-              # ============================================================
-              # NOTE: This deployment block is duplicated in the auto-deploy-to-production stage.
-              #       CNB does not support shared functions between stages, so the logic must
-              #       be duplicated. Keep both sections in sync when making changes!
-              # Deploy Single Container (Backend + Caddy + Frontend)
-              # ============================================================
-              echo "==> Deploying Firecrawl Lite (single container with HTTPS)"
-              
-              # Create persistent volume for SSL certificates (secure permissions)
-              mkdir -p /opt/firecrawl-lite/caddy-data
-              chmod 700 /opt/firecrawl-lite/caddy-data
-              
-              # Stop and remove old container(s)
-              docker stop firecrawl-lite 2>/dev/null || true
-              docker rm firecrawl-lite 2>/dev/null || true
-              
-              # Also clean up old 3-container architecture if exists
-              docker stop firecrawl-lite-backend firecrawl-lite-frontend firecrawl-lite-proxy 2>/dev/null || true
-              docker rm firecrawl-lite-backend firecrawl-lite-frontend firecrawl-lite-proxy 2>/dev/null || true
-              docker network rm firecrawl-network 2>/dev/null || true
-              
-              # Deploy single container
-              docker run -d \
-                -p 80:80 \
-                -p 443:443 \
-                --name firecrawl-lite \
-                --restart=always \
-                -v /opt/firecrawl-lite/caddy-data:/data \
-                -e VERSION="${VERSION}" \
-                "${IMAGE}"
-              
-              # ============================================================
-              # Verify deployment with health checks
-              # ============================================================
-              echo "==> Waiting for container to start..."
-              sleep 5
-              
-              # Check if container is running
-              if ! docker ps | grep -q firecrawl-lite; then
-                echo "==> ERROR: Container failed to start"
-                docker logs --tail 50 firecrawl-lite
+              # Verify DOMAIN is set
+              if [ -z "${DOMAIN:-}" ]; then
+                echo "==> ERROR: DOMAIN environment variable not set in imports file" >&2
                 exit 1
               fi
               
-              # Wait for backend to be ready (max 10 seconds with retry)
-              echo "==> Waiting for backend to be ready..."
-              BACKEND_READY=false
-              for i in $(seq 1 10); do
-                if docker exec firecrawl-lite curl -sf http://localhost:3000/api/health >/dev/null 2>&1; then
-                  echo "==> ✓ Backend is ready"
-                  BACKEND_READY=true
-                  break
-                fi
-                sleep 1
-              done
+              echo "==> Deploying version ${VERSION}" >&2
               
-              # Verify backend became healthy
-              if [ "$BACKEND_READY" = false ]; then
-                echo "==> ERROR: Backend failed to become healthy within 10 seconds" >&2
-                docker logs --tail 50 firecrawl-lite
-                exit 1
-              fi
-              
-              # Wait for Caddy to start and test HTTPS (with retry)
-              echo "==> Waiting for Caddy to start and obtain SSL certificate..."
-              sleep 5
-              
-              # Try HTTPS for up to 60 seconds (Let's Encrypt can be slow)
-              HTTPS_OK=false
-              for i in $(seq 1 12); do
-                if curl -f --max-time 5 https://${DOMAIN:-your-domain.com}/api/health >/dev/null 2>&1; then
-                  echo "==> ✓ HTTPS is working (SSL certificate obtained)"
-                  HTTPS_OK=true
-                  break
-                fi
-                echo "==> Attempt $i/12: HTTPS not ready yet..."
-                sleep 5
-              done
-              
-              # If HTTPS failed, check logs and exit
-              if [ "$HTTPS_OK" = false ]; then
-                echo "==> ✗ ERROR: HTTPS failed after 60 seconds"
-                echo "==> This usually means:"
-                echo "    1. DNS not pointing to this server (check: dig ${DOMAIN:-your-domain.com})"
-                echo "    2. Ports 80/443 not accessible (check firewall)"
-                echo "    3. Let's Encrypt rate limit hit"
-                echo ""
-                echo "==> Container logs (last 50 lines):"
-                docker logs --tail 50 firecrawl-lite | grep -i "acme\|certificate\|error" || docker logs --tail 50 firecrawl-lite
-                exit 1
-              fi
-              
-              echo "==> ✓ Deployment complete"
-              echo "==> Container status:"
-              docker ps | grep firecrawl-lite
-              echo ""
-              echo "==> Access your app at:"
-              echo "    https://${DOMAIN:-your-domain.com}/ (HTTPS - recommended)"
-              echo "    http://${DOMAIN:-your-domain.com}/  (HTTP - redirects to HTTPS)"
-              echo ""
-              echo "==> Check SSL certificate:"
-              echo "    docker logs firecrawl-lite | grep -i certificate"
+              # Execute deployment script
+              sh /workspace/deploy.sh "${VERSION}"
   
   # -------------------------------------------------------------------------
   # Manual Rollback to Specific Version
   # -------------------------------------------------------------------------
-  # Usage: Trigger this manually in CI, set ROLLBACK_VERSION env var.
-  # Example: ROLLBACK_VERSION=v1.2.2
-  # Same as deploy, just semantically different name.
+  # Usage: Set ROLLBACK_VERSION=v1.2.2 and trigger this operation
   # -------------------------------------------------------------------------
   rollback:
     - services:
@@ -509,26 +504,36 @@ $:
             port: ${REMOTE_PORT}
             command_timeout: 5m
             script: |
+              set -eu
+              
               TARGET_VERSION="${ROLLBACK_VERSION:-}"
               if [ -z "${TARGET_VERSION}" ]; then
-                echo "==> ERROR: ROLLBACK_VERSION environment variable not set."
-                echo "==> Usage: trigger this manually and set ROLLBACK_VERSION=v1.2.2"
+                echo "==> ERROR: ROLLBACK_VERSION environment variable not set." >&2
+                echo "==> Usage: trigger this manually and set ROLLBACK_VERSION=v1.2.2" >&2
+                exit 1
+              fi
+              
+              # Verify DOMAIN is set
+              if [ -z "${DOMAIN:-}" ]; then
+                echo "==> ERROR: DOMAIN environment variable not set in imports file" >&2
                 exit 1
               fi
               
               IMAGE="docker.cnb.cool/ai-alchemy-factory/firecrawl-lite:${TARGET_VERSION}"
               
-              echo "==> Rolling back to version ${TARGET_VERSION}"
+              echo "==> Rolling back to version ${TARGET_VERSION}" >&2
               
+              # Login and pull
               echo "${REGISTRY_TOKEN}" | docker login -u "${REGISTRY_USER}" --password-stdin docker.cnb.cool
               docker pull "${IMAGE}"
               
-              # Rollback entire container
-              echo "==> Stopping current container..."
+              # Stop and remove current container
+              echo "==> Stopping current container..." >&2
               docker stop firecrawl-lite || true
               docker rm firecrawl-lite || true
               
-              echo "==> Starting rollback version ${TARGET_VERSION}..."
+              # Start rollback version
+              echo "==> Starting rollback version ${TARGET_VERSION}..." >&2
               docker run -d \
                 -p 80:80 \
                 -p 443:443 \
@@ -538,15 +543,13 @@ $:
                 -e VERSION="${TARGET_VERSION}" \
                 "${IMAGE}"
               
-              # Wait for startup
-              sleep 10
-              
               # Verify rollback
+              sleep 10
               if docker exec firecrawl-lite curl -sf http://localhost:3000/api/health >/dev/null 2>&1; then
-                echo "==> ✓ Rollback complete"
+                echo "==> ✓ Rollback complete" >&2
                 docker ps | grep firecrawl-lite
               else
-                echo "==> ERROR: Rollback failed - container not healthy"
+                echo "==> ERROR: Rollback failed - container not healthy" >&2
                 docker logs --tail 50 firecrawl-lite
                 exit 1
               fi
