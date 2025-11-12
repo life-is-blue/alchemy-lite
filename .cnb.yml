@@ -92,17 +92,21 @@ main:
             npm test
             npm run build
             echo "==> Release build complete."
-            printf "%s" "${VERSION}"
-          exports:
-            stdout: RELEASE_VERSION
+            # Write version to file for reliable cross-stage passing (avoids stdout export issues)
+            printf "%s" "${VERSION}" > /tmp/release-version.txt
         
         - name: build-and-push-release
           image: docker:24-cli
           script: |
             set -eu
-            VERSION="${RELEASE_VERSION}"
+            # Read version from file written by previous stage
+            if [ ! -f /tmp/release-version.txt ]; then
+              echo "==> FATAL: /tmp/release-version.txt not found. Previous stage may have failed."
+              exit 1
+            fi
+            VERSION=$(cat /tmp/release-version.txt)
             if [ -z "${VERSION}" ]; then
-              echo "==> FATAL: RELEASE_VERSION not exported from test-and-build stage."
+              echo "==> FATAL: Version file is empty."
               exit 1
             fi
             
@@ -120,14 +124,9 @@ main:
             echo "==> Pushed: ${IMAGE_TAG}" >&2
             echo "==> Pushed: ${LATEST_TAG}" >&2
             echo "==> Build complete. Auto-deploying to production..." >&2
-            printf "%s" "${VERSION}"
-          exports:
-            stdout: RELEASE_VERSION
         
         - name: auto-deploy-to-production
           image: cnbcool/ssh
-          env:
-            DEPLOY_VERSION: ${RELEASE_VERSION}
           imports: https://cnb.cool/ai-alchemy-factory/project-secrets/-/blob/main/firecrawl-lite-ssh.yml
           settings:
             host: ${REMOTE_HOST}
@@ -136,9 +135,14 @@ main:
             port: ${REMOTE_PORT}
             command_timeout: 5m
             script: |
-              VERSION="${DEPLOY_VERSION}"
+              # Read version from file written by test-and-build stage
+              if [ ! -f /tmp/release-version.txt ]; then
+                echo "==> FATAL: /tmp/release-version.txt not found."
+                exit 1
+              fi
+              VERSION=$(cat /tmp/release-version.txt)
               if [ -z "${VERSION}" ]; then
-                echo "==> ERROR: DEPLOY_VERSION is not set."
+                echo "==> ERROR: Version file is empty."
                 exit 1
               fi
               
