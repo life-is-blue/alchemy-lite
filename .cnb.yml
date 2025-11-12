@@ -149,120 +149,102 @@ $:
               docker pull "${IMAGE}"
               
               # ============================================================
-              # Step 0: Create Docker network
+              # Deploy Single Container (Backend + Caddy + Frontend)
               # ============================================================
-              docker network create firecrawl-network || true
+              echo "==> Deploying Firecrawl Lite (single container with HTTPS)"
               
-              # ============================================================
-              # Step 1: Deploy Backend API (internal port 3000)
-              # ============================================================
-              echo "==> Deploying backend API..."
-              docker stop firecrawl-lite-backend || true
-              docker rm firecrawl-lite-backend || true
+              # Create persistent volume for SSL certificates (secure permissions)
+              mkdir -p /opt/firecrawl-lite/caddy-data
+              chmod 700 /opt/firecrawl-lite/caddy-data
               
+              # Stop and remove old container(s)
+              docker stop firecrawl-lite 2>/dev/null || true
+              docker rm firecrawl-lite 2>/dev/null || true
+              
+              # Also clean up old 3-container architecture if exists
+              docker stop firecrawl-lite-backend firecrawl-lite-frontend firecrawl-lite-proxy 2>/dev/null || true
+              docker rm firecrawl-lite-backend firecrawl-lite-frontend firecrawl-lite-proxy 2>/dev/null || true
+              docker network rm firecrawl-network 2>/dev/null || true
+              
+              # Deploy single container
               docker run -d \
-                --name firecrawl-lite-backend \
-                --network firecrawl-network \
+                -p 80:80 \
+                -p 443:443 \
+                --name firecrawl-lite \
                 --restart=always \
+                -v /opt/firecrawl-lite/caddy-data:/data \
                 -e VERSION="${VERSION}" \
                 "${IMAGE}"
               
               # ============================================================
-              # Step 2: Deploy Frontend (static files)
+              # Verify deployment with health checks
               # ============================================================
-              echo "==> Deploying frontend..."
+              echo "==> Waiting for container to start..."
+              sleep 5
               
-              # Fetch frontend files from repo (Dockerfile doesn't include public/)
-              rm -rf /tmp/firecrawl-frontend /tmp/firecrawl-repo
-              
-              if ! git clone --depth 1 --branch "${VERSION}" \
-                https://github.com/ai-alchemy-factory/firecrawl-lite /tmp/firecrawl-repo; then
-                echo "==> ERROR: Failed to fetch frontend for version ${VERSION}"
-                echo "==> Make sure the tag exists and the repo is accessible"
+              # Check if container is running
+              if ! docker ps | grep -q firecrawl-lite; then
+                echo "==> ERROR: Container failed to start"
+                docker logs --tail 50 firecrawl-lite
                 exit 1
               fi
               
-              if [ ! -d "/tmp/firecrawl-repo/public" ]; then
-                echo "==> ERROR: public/ directory not found in repo"
-                rm -rf /tmp/firecrawl-repo
-                exit 1
-              fi
-              
-              cp -r /tmp/firecrawl-repo/public /tmp/firecrawl-frontend
-              rm -rf /tmp/firecrawl-repo
-              
-              docker stop firecrawl-lite-frontend || true
-              docker rm firecrawl-lite-frontend || true
-              
-              docker run -d \
-                --name firecrawl-lite-frontend \
-                --network firecrawl-network \
-                --restart=always \
-                -v /tmp/firecrawl-frontend:/usr/share/nginx/html:ro \
-                nginx:alpine
-              
-              # ============================================================
-              # Step 3: Deploy Reverse Proxy (Caddy on port 80)
-              # ============================================================
-              echo "==> Deploying reverse proxy..."
-              
-              # Create Caddyfile
-              cat > /tmp/Caddyfile <<'CADDY'
-              :80 {
-                # API backend
-                route /api* {
-                  reverse_proxy firecrawl-lite-backend:3000
-                }
-                
-                # Frontend
-                route /* {
-                  reverse_proxy firecrawl-lite-frontend:80
-                }
-              }
-              CADDY
-              
-              docker stop firecrawl-lite-proxy || true
-              docker rm firecrawl-lite-proxy || true
-              
-              docker run -d -p 80:80 \
-                --name firecrawl-lite-proxy \
-                --network firecrawl-network \
-                --restart=always \
-                -v /tmp/Caddyfile:/etc/caddy/Caddyfile:ro \
-                caddy:latest
-              
-              # ============================================================
-              # Step 4: Verify deployment with health checks
-              # ============================================================
-              echo "==> Verifying deployment..."
-              sleep 3
+              # Wait for backend to be ready (max 10 seconds)
+              echo "==> Waiting for backend to be ready..."
+              for i in $(seq 1 10); do
+                if docker exec firecrawl-lite curl -sf http://localhost:3000/api/health >/dev/null 2>&1; then
+                  echo "==> Backend is ready"
+                  break
+                fi
+                sleep 1
+              done
               
               # Check backend health
-              if ! docker exec firecrawl-lite-backend wget -q -O- http://localhost:3000/api/health > /dev/null; then
+              if ! docker exec firecrawl-lite curl -sf http://localhost:3000/api/health >/dev/null 2>&1; then
                 echo "==> ERROR: Backend health check failed"
-                docker logs --tail 20 firecrawl-lite-backend
+                docker logs --tail 50 firecrawl-lite
                 exit 1
               fi
               
-              # Check frontend (Nginx serves on port 80)
-              if ! docker exec firecrawl-lite-frontend wget -q -O- http://localhost:80 > /dev/null; then
-                echo "==> ERROR: Frontend health check failed"
-                docker logs --tail 20 firecrawl-lite-frontend
+              # Wait for Caddy to start and test HTTPS (with retry)
+              echo "==> Waiting for Caddy to start and obtain SSL certificate..."
+              sleep 5
+              
+              # Try HTTPS for up to 60 seconds (Let's Encrypt can be slow)
+              HTTPS_OK=false
+              for i in $(seq 1 12); do
+                if curl -f --max-time 5 https://izoa.fun/api/health >/dev/null 2>&1; then
+                  echo "==> ✓ HTTPS is working (SSL certificate obtained)"
+                  HTTPS_OK=true
+                  break
+                fi
+                echo "==> Attempt $i/12: HTTPS not ready yet..."
+                sleep 5
+              done
+              
+              # If HTTPS failed, check logs and exit
+              if [ "$HTTPS_OK" = false ]; then
+                echo "==> ✗ ERROR: HTTPS failed after 60 seconds"
+                echo "==> This usually means:"
+                echo "    1. DNS not pointing to this server (check: dig izoa.fun)"
+                echo "    2. Ports 80/443 not accessible (check firewall)"
+                echo "    3. Let's Encrypt rate limit hit"
+                echo ""
+                echo "==> Container logs (last 50 lines):"
+                docker logs --tail 50 firecrawl-lite | grep -i "acme\|certificate\|error" || docker logs --tail 50 firecrawl-lite
                 exit 1
               fi
               
-              # Check proxy (accessible from host)
-              if ! wget -q -O- http://localhost:80 > /dev/null; then
-                echo "==> ERROR: Proxy health check failed"
-                docker logs --tail 20 firecrawl-lite-proxy
-                exit 1
-              fi
-              
-              echo "==> All health checks passed ✓"
-              echo "==> Deployment complete"
-              echo "==> Access your app at: http://localhost:80"
-              echo "==> (Backend and frontend are internal, only proxy is exposed)"
+              echo "==> ✓ Deployment complete"
+              echo "==> Container status:"
               docker ps | grep firecrawl-lite
+              echo ""
+              echo "==> Access your app at:"
+              echo "    https://izoa.fun/ (HTTPS - recommended)"
+              echo "    http://izoa.fun/  (HTTP - redirects to HTTPS)"
+              echo ""
+              echo "==> Check SSL certificate:"
+              echo "    docker logs firecrawl-lite | grep -i certificate"
   
   # -------------------------------------------------------------------------
   # Manual Rollback to Specific Version
@@ -300,19 +282,33 @@ $:
               echo "${REGISTRY_TOKEN}" | docker login -u "${REGISTRY_USER}" --password-stdin docker.cnb.cool
               docker pull "${IMAGE}"
               
-              # Rollback backend only (frontend and proxy unchanged)
-              docker stop firecrawl-lite-backend || true
-              docker rm firecrawl-lite-backend || true
+              # Rollback entire container
+              echo "==> Stopping current container..."
+              docker stop firecrawl-lite || true
+              docker rm firecrawl-lite || true
               
+              echo "==> Starting rollback version ${TARGET_VERSION}..."
               docker run -d \
-                --name firecrawl-lite-backend \
-                --network firecrawl-network \
+                -p 80:80 \
+                -p 443:443 \
+                --name firecrawl-lite \
                 --restart=always \
+                -v /opt/firecrawl-lite/caddy-data:/data \
                 -e VERSION="${TARGET_VERSION}" \
                 "${IMAGE}"
               
-              echo "==> Rollback complete (backend only)"
-              docker ps | grep firecrawl-lite
+              # Wait for startup
+              sleep 10
+              
+              # Verify rollback
+              if docker exec firecrawl-lite curl -sf http://localhost:3000/api/health >/dev/null 2>&1; then
+                echo "==> ✓ Rollback complete"
+                docker ps | grep firecrawl-lite
+              else
+                echo "==> ERROR: Rollback failed - container not healthy"
+                docker logs --tail 50 firecrawl-lite
+                exit 1
+              fi
   
   # -------------------------------------------------------------------------
   # Check Current Production Version
