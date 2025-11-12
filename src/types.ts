@@ -47,3 +47,14 @@ export interface CrawlResponse {
   totalPages: number;
   error?: string;
 }
+
+/**
+ * Crawl progress event
+ */
+export interface CrawlProgressEvent {
+  type: 'progress' | 'complete' | 'error';
+  completed: number;
+  total: number;
+  currentUrl?: string;
+  error?: string;
+}

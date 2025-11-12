@@ -123,6 +123,108 @@ Retrying permanent errors just wastes time.
 
 ---
 
+### 4. Crawl with Real-time Progress (SSE)
+
+For large crawls, use Server-Sent Events to show real-time progress:
+
+```javascript
+async function crawlWithProgress(url, maxPages, onProgress) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 10 * 60 * 1000); // 10 min
+  
+  try {
+    const response = await fetch('/api/crawl', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'text/event-stream', // Trigger SSE mode
+      },
+      body: JSON.stringify({ url, maxPages, renderJS: false }),
+      signal: controller.signal,
+    });
+    
+    clearTimeout(timeoutId);
+    
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    
+    // Read SSE stream
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    const MAX_BUFFER_SIZE = 10 * 1024 * 1024; // 10MB limit
+    let buffer = '';
+    let finalResult = null;
+    
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      
+      buffer += decoder.decode(value, { stream: true });
+      
+      // Prevent memory leak
+      if (buffer.length > MAX_BUFFER_SIZE) {
+        reader.cancel();
+        throw new Error('Response too large');
+      }
+      
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || ''; // Keep incomplete line
+      
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        
+        try {
+          const event = JSON.parse(line.substring(6));
+          
+          if (event.type === 'progress') {
+            // Validate data (prevent NaN/Infinity)
+            const completed = Math.max(0, Number(event.completed) || 0);
+            const total = Math.max(1, Number(event.total) || 1);
+            onProgress(completed, total, event.currentUrl);
+          } else if (event.type === 'result') {
+            finalResult = event.data;
+          } else if (event.type === 'error') {
+            throw new Error(event.error || 'Crawl failed');
+          }
+        } catch (parseError) {
+          console.warn('Failed to parse SSE event:', line, parseError);
+        }
+      }
+    }
+    
+    if (!finalResult) throw new Error('No result received');
+    return finalResult;
+    
+  } catch (error) {
+    clearTimeout(timeoutId);
+    throw error;
+  }
+}
+
+// Usage
+await crawlWithProgress(
+  'https://docs.example.com',
+  50,
+  (completed, total, url) => {
+    console.log(`Progress: ${completed}/${total} - ${url}`);
+    document.getElementById('progress').textContent = 
+      `Crawling: ${completed}/${total}`;
+  }
+);
+```
+
+**Critical SSE safeguards**:
+- ✅ **10-min timeout with AbortController** - prevents hanging forever
+- ✅ **10MB buffer limit** - prevents memory exhaustion attacks
+- ✅ **Data validation** - `Math.max()` prevents NaN/division by zero
+- ✅ **Cleanup in finally** - always clear timeout even on error
+
+**Why not EventSource**?
+- `EventSource` doesn't support POST requests or custom headers
+- Need full control over request body and timeout handling
+- `ReadableStream` API is more flexible for our use case
+
+---
+
 ## Best Practices
 
 - **Cache aggressively**: Never scrape the same URL twice. Use Redis or simple Map with TTL.

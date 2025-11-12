@@ -72,12 +72,54 @@ app.post('/api/scrape', authenticate, async (req: Request, res: Response) => {
   }
 });
 
-// Crawl endpoint
+// Crawl endpoint (with SSE support)
 app.post('/api/crawl', authenticate, async (req: Request, res: Response) => {
   try {
     const request = CrawlRequestSchema.parse(req.body);
-    const result = await crawl(request);
-    res.json(result);
+    const acceptsSSE = req.headers.accept?.includes('text/event-stream');
+
+    if (acceptsSSE) {
+      // SSE mode: stream progress events
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+      res.flushHeaders();
+
+      try {
+        const result = await crawl(request, (event) => {
+          // 检查连接是否还活着
+          if (res.writableEnded || res.destroyed) {
+            return; // 客户端已断开，停止写入
+          }
+          
+          try {
+            res.write(`data: ${JSON.stringify(event)}\n\n`);
+          } catch (writeError) {
+            logger.error('SSE write failed', { error: writeError instanceof Error ? writeError.message : writeError });
+          }
+        });
+
+        // Send final result
+        if (!res.writableEnded && !res.destroyed) {
+          res.write(`data: ${JSON.stringify({ type: 'result', data: result })}\n\n`);
+          res.end();
+        }
+      } catch (crawlError) {
+        logger.error('Crawl error in SSE mode', { error: crawlError instanceof Error ? crawlError.message : crawlError });
+        
+        if (!res.writableEnded && !res.destroyed) {
+          res.write(`data: ${JSON.stringify({ 
+            type: 'error', 
+            error: crawlError instanceof Error ? crawlError.message : 'Crawl failed' 
+          })}\n\n`);
+          res.end();
+        }
+      }
+    } else {
+      // JSON mode: traditional response
+      const result = await crawl(request);
+      res.json(result);
+    }
   } catch (error) {
     logger.error('Crawl request failed', { error: error instanceof Error ? error.message : error });
     res.status(400).json({

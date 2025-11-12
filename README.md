@@ -95,10 +95,35 @@ tests/
 ```
 
 **POST /api/crawl** - Recursive crawl with limits
-```json
-{"url": "https://example.com", "maxDepth": 2, "maxPages": 10, "pathPrefix": "/docs/"}
+
+JSON mode (traditional):
+```bash
+curl -X POST http://localhost:3000/api/crawl \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://example.com", "maxDepth": 2, "maxPages": 10, "pathPrefix": "/docs/"}'
 ```
+
+SSE mode (real-time progress):
+```bash
+curl -X POST http://localhost:3000/api/crawl \
+  -H "Content-Type: application/json" \
+  -H "Accept: text/event-stream" \
+  -d '{"url": "https://docs.example.com", "maxPages": 50}'
+```
+
+Server streams progress events:
+```
+data: {"type":"progress","completed":1,"total":50,"currentUrl":"https://..."}
+data: {"type":"progress","completed":2,"total":50,"currentUrl":"https://..."}
+...
+data: {"type":"complete","completed":50,"total":50}
+data: {"type":"result","data":{"success":true,"pages":[...]}}
+```
+
+Parameters:
 - `pathPrefix` (optional): Only crawl URLs matching this path prefix
+- `renderJS` (optional): Use browser rendering for JavaScript-heavy sites
+- SSE mode triggered by: `Accept: text/event-stream` header
 
 **GET /api/health** - Health check
 
