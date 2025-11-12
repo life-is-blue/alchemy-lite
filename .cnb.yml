@@ -124,8 +124,7 @@ $:
       stages:
         - name: deploy-to-production
           image: cnbcool/ssh
-          # 注意: imports 路径应存储在 CI/CD 秘密配置中,不应出现在代码库中
-          # 在 CNB 平台中通过项目设置配置 SSH 密钥
+          imports: ${DEPLOY_SECRETS_IMPORTS}
           settings:
             host:
               - ${REMOTE_HOST}
@@ -214,7 +213,7 @@ $:
               # Try HTTPS for up to 60 seconds (Let's Encrypt can be slow)
               HTTPS_OK=false
               for i in $(seq 1 12); do
-                if curl -f --max-time 5 https://your-domain.com/api/health >/dev/null 2>&1; then
+                if curl -f --max-time 5 https://${DOMAIN:-your-domain.com}/api/health >/dev/null 2>&1; then
                   echo "==> ✓ HTTPS is working (SSL certificate obtained)"
                   HTTPS_OK=true
                   break
@@ -227,7 +226,7 @@ $:
               if [ "$HTTPS_OK" = false ]; then
                 echo "==> ✗ ERROR: HTTPS failed after 60 seconds"
                 echo "==> This usually means:"
-                echo "    1. DNS not pointing to this server (check: dig your-domain.com)"
+                echo "    1. DNS not pointing to this server (check: dig ${DOMAIN:-your-domain.com})"
                 echo "    2. Ports 80/443 not accessible (check firewall)"
                 echo "    3. Let's Encrypt rate limit hit"
                 echo ""
@@ -241,8 +240,8 @@ $:
               docker ps | grep firecrawl-lite
               echo ""
               echo "==> Access your app at:"
-              echo "    https://your-domain.com/ (HTTPS - recommended)"
-              echo "    http://your-domain.com/  (HTTP - redirects to HTTPS)"
+              echo "    https://${DOMAIN:-your-domain.com}/ (HTTPS - recommended)"
+              echo "    http://${DOMAIN:-your-domain.com}/  (HTTP - redirects to HTTPS)"
               echo ""
               echo "==> Check SSL certificate:"
               echo "    docker logs firecrawl-lite | grep -i certificate"
@@ -260,8 +259,7 @@ $:
       stages:
         - name: rollback-to-version
           image: cnbcool/ssh
-          # 注意: imports 路径应存储在 CI/CD 秘密配置中,不应出现在代码库中
-          # 在 CNB 平台中通过项目设置配置 SSH 密钥
+          imports: ${DEPLOY_SECRETS_IMPORTS}
           settings:
             host:
               - ${REMOTE_HOST}
@@ -321,8 +319,7 @@ $:
       stages:
         - name: show-current-version
           image: cnbcool/ssh
-          # 注意: imports 路径应存储在 CI/CD 秘密配置中,不应出现在代码库中
-          # 在 CNB 平台中通过项目设置配置 SSH 密钥
+          imports: ${DEPLOY_SECRETS_IMPORTS}
           settings:
             host:
               - ${REMOTE_HOST}
