@@ -7,7 +7,9 @@ import { URL } from 'url';
 import * as cheerio from 'cheerio';
 import { scrape } from '../scraper/index.js';
 import { logger } from '../logger.js';
-import type { CrawlRequest, CrawlResponse, ScrapeResponse } from '../types.js';
+import type { CrawlRequest, CrawlResponse, ScrapeResponse, CrawlProgressEvent } from '../types.js';
+
+export type ProgressCallback = (event: CrawlProgressEvent) => void;
 
 /**
  * Extract all links from HTML that belong to the same domain
@@ -46,7 +48,10 @@ function extractLinks(html: string, baseUrl: string, pathPrefix?: string): strin
 /**
  * Crawl a website recursively
  */
-export async function crawl(request: CrawlRequest): Promise<CrawlResponse> {
+export async function crawl(
+  request: CrawlRequest,
+  onProgress?: ProgressCallback
+): Promise<CrawlResponse> {
   const { url, maxDepth, maxPages, renderJS, timeout, pathPrefix } = request;
 
   logger.info('Starting crawl', { url, maxDepth, maxPages, pathPrefix });
@@ -78,10 +83,20 @@ export async function crawl(request: CrawlRequest): Promise<CrawlResponse> {
     visited.add(currentUrl);
 
     // Scrape the page
-    const result = await scrape({ url: currentUrl, renderJS, timeout, autoClickTabs: true });
+    const result = await scrape({ url: currentUrl, renderJS, timeout });
     results.push(result);
 
     logger.debug('Crawled page', { url: currentUrl, depth, total: visited.size });
+
+    // Emit progress event
+    if (onProgress) {
+      onProgress({
+        type: 'progress',
+        completed: visited.size,
+        total: maxPages!,
+        currentUrl,
+      });
+    }
 
     // If scrape failed, don't continue from this page
     if (!result.success || !result.html) {
@@ -104,6 +119,15 @@ export async function crawl(request: CrawlRequest): Promise<CrawlResponse> {
 
     logger.info('Crawl completed', { url, totalPages: results.length });
 
+    // Emit complete event
+    if (onProgress) {
+      onProgress({
+        type: 'complete',
+        completed: results.length,
+        total: results.length,
+      });
+    }
+
     return {
       success: true,
       baseUrl: url,
@@ -112,6 +136,16 @@ export async function crawl(request: CrawlRequest): Promise<CrawlResponse> {
     };
   } catch (error) {
     logger.error('Crawl failed', { url, error: error instanceof Error ? error.message : error });
+
+    // Emit error event
+    if (onProgress) {
+      onProgress({
+        type: 'error',
+        completed: results.length,
+        total: maxPages!,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
 
     return {
       success: false,

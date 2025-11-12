@@ -293,6 +293,49 @@ function updateProgress(completed, total) {
 }
 
 /**
+ * 智能截断URL（保留协议和域名）
+ */
+function truncateUrl(url, maxLength = 60) {
+  if (!url || url.length <= maxLength) return url;
+  
+  try {
+    const parsed = new URL(url);
+    const origin = parsed.origin; // 保留协议和域名
+    const remaining = maxLength - origin.length - 3; // "..."占3个字符
+    
+    if (remaining > 10) {
+      const path = parsed.pathname + parsed.search;
+      return origin + path.substring(0, remaining) + '...';
+    }
+  } catch {
+    // URL解析失败，回退到简单截断
+  }
+  
+  return url.substring(0, maxLength - 3) + '...';
+}
+
+/**
+ * 更新进度消息（带URL，XSS安全）
+ */
+function updateProgressWithUrl(completed, total, currentUrl) {
+  UIElements.errorDiv.textContent = '';
+  UIElements.errorDiv.appendChild(createIcon('icon-spinner'));
+  
+  if (currentUrl) {
+    const displayUrl = truncateUrl(currentUrl, 60);
+    UIElements.errorDiv.appendChild(
+      document.createTextNode(` 正在爬取：${completed}/${total} - ${displayUrl}`)
+    );
+  } else {
+    UIElements.errorDiv.appendChild(
+      document.createTextNode(` 正在爬取：${completed}/${total} 已完成`)
+    );
+  }
+  
+  UIElements.errorDiv.classList.add('show', 'info');
+}
+
+/**
  * 显示错误消息（XSS安全）
  */
 function showError(message) {
@@ -523,7 +566,7 @@ async function handleSingleScrape(url) {
 }
 
 /**
- * 处理crawl请求
+ * 处理crawl请求（使用SSE实时进度）
  */
 async function handleCrawl(url) {
   UIElements.submitBtn.disabled = true;
@@ -542,42 +585,100 @@ async function handleCrawl(url) {
   
   updateProgress(0, maxPages);
   
+  // 构建请求body
+  const requestBody = {
+    url: url,
+    renderJS: UIElements.renderJSCheckbox.checked,
+    pathPrefix: pathPrefix,
+    maxPages: maxPages,
+  };
+  
   // Crawl通常需要更长时间，使用10分钟超时
   const crawlTimeout = 10 * 60 * 1000; // 10 minutes
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), crawlTimeout);
   
   try {
+    // 使用SSE接收实时进度
     const response = await fetch(`${Config.API_BASE}/crawl`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        url: url,
-        renderJS: UIElements.renderJSCheckbox.checked,
-        pathPrefix: pathPrefix,
-        maxPages: maxPages,
-      }),
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'text/event-stream',
+      },
+      body: JSON.stringify(requestBody),
       signal: controller.signal,
     });
     
     clearTimeout(timeoutId);
     
-    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
     
-    if (!response.ok || !data.success) {
-      throw new Error(data.error || `HTTP ${response.status}`);
+    // 读取SSE流
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    const MAX_BUFFER_SIZE = 10 * 1024 * 1024; // 10MB 上限防止内存泄漏
+    let buffer = '';
+    let finalResult = null;
+    
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      
+      buffer += decoder.decode(value, { stream: true });
+      
+      // 防止buffer无限增长
+      if (buffer.length > MAX_BUFFER_SIZE) {
+        reader.cancel();
+        throw new Error('SSE流数据过大');
+      }
+      
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || ''; // 保留不完整的行
+      
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        
+        try {
+          const event = JSON.parse(line.substring(6));
+          
+          if (event.type === 'progress') {
+            // 更新进度显示（添加数值验证）
+            const completed = Math.max(0, Number(event.completed) || 0);
+            const total = Math.max(1, Number(event.total) || 1);
+            updateProgressWithUrl(completed, total, event.currentUrl);
+          } else if (event.type === 'result') {
+            // 保存最终结果
+            finalResult = event.data;
+          } else if (event.type === 'error') {
+            throw new Error(event.error || 'Crawl failed');
+          }
+        } catch (parseError) {
+          console.warn('Failed to parse SSE event:', line, parseError);
+        }
+      }
+    }
+    
+    if (!finalResult) {
+      throw new Error('未收到爬取结果');
+    }
+    
+    if (!finalResult.success) {
+      throw new Error(finalResult.error || '爬取失败');
     }
     
     // 根据显示模式展示结果
     const displayMode = UIElements.displayModeSelect.value;
     if (displayMode === 'merged') {
-      displayMergedCrawlResults(data);
+      displayMergedCrawlResults(finalResult);
     } else {
-      displayPaginatedCrawlResults(data);
+      displayPaginatedCrawlResults(finalResult);
     }
     
     // 显示成功消息
-    showSuccess(`爬取完成：共 ${data.totalPages} 页`);
+    showSuccess(`爬取完成：共 ${finalResult.totalPages} 页`);
     
     // 平滑滚动到结果
     const scrollTimeoutId = setTimeout(() => {
