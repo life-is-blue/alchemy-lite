@@ -126,8 +126,7 @@ $:
           image: cnbcool/ssh
           imports: ${DEPLOY_SECRETS_IMPORTS}
           settings:
-            host:
-              - ${REMOTE_HOST}
+            host: ${REMOTE_HOST}
             username: ${REMOTE_USERNAME}
             key: ${PRIVATE_KEY}
             port: ${REMOTE_PORT}
@@ -261,8 +260,7 @@ $:
           image: cnbcool/ssh
           imports: ${DEPLOY_SECRETS_IMPORTS}
           settings:
-            host:
-              - ${REMOTE_HOST}
+            host: ${REMOTE_HOST}
             username: ${REMOTE_USERNAME}
             key: ${PRIVATE_KEY}
             port: ${REMOTE_PORT}
@@ -321,8 +319,7 @@ $:
           image: cnbcool/ssh
           imports: ${DEPLOY_SECRETS_IMPORTS}
           settings:
-            host:
-              - ${REMOTE_HOST}
+            host: ${REMOTE_HOST}
             username: ${REMOTE_USERNAME}
             key: ${PRIVATE_KEY}
             port: ${REMOTE_PORT}
