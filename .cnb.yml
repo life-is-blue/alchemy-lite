@@ -92,19 +92,21 @@ main:
             npm test
             npm run build
             echo "==> Release build complete."
-            # Write version to file for reliable cross-stage passing (avoids stdout export issues)
-            printf "%s" "${VERSION}" > /tmp/release-version.txt
+            # Write version to workspace for reliable cross-stage passing
+            # Note: /tmp is container-local and disappears between stages
+            # /workspace is shared across all stages in a pipeline
+            printf "%s" "${VERSION}" > /workspace/.release-version
         
         - name: build-and-push-release
           image: docker:24-cli
           script: |
             set -eu
-            # Read version from file written by previous stage
-            if [ ! -f /tmp/release-version.txt ]; then
-              echo "==> FATAL: /tmp/release-version.txt not found. Previous stage may have failed."
+            # Read version from workspace (shared across stages)
+            if [ ! -f /workspace/.release-version ]; then
+              echo "==> FATAL: .release-version not found in workspace"
               exit 1
             fi
-            VERSION=$(cat /tmp/release-version.txt)
+            VERSION=$(cat /workspace/.release-version)
             if [ -z "${VERSION}" ]; then
               echo "==> FATAL: Version file is empty."
               exit 1
@@ -135,12 +137,12 @@ main:
             port: ${REMOTE_PORT}
             command_timeout: 5m
             script: |
-              # Read version from file written by test-and-build stage
-              if [ ! -f /tmp/release-version.txt ]; then
-                echo "==> FATAL: /tmp/release-version.txt not found."
+              # Read version from workspace (shared across stages)
+              if [ ! -f /workspace/.release-version ]; then
+                echo "==> FATAL: .release-version not found in workspace"
                 exit 1
               fi
-              VERSION=$(cat /tmp/release-version.txt)
+              VERSION=$(cat /workspace/.release-version)
               if [ -z "${VERSION}" ]; then
                 echo "==> ERROR: Version file is empty."
                 exit 1
