@@ -83,7 +83,7 @@ export async function crawl(
     visited.add(currentUrl);
 
     // Scrape the page
-    const result = await scrape({ url: currentUrl, renderJS, timeout });
+    const result = await scrape({ url: currentUrl, renderJS, timeout, autoClickTabs: false });
     results.push(result);
 
     logger.debug('Crawled page', { url: currentUrl, depth, total: visited.size });
