@@ -81,19 +81,19 @@ main:
         - name: deploy to production
           image: cnbcool/ssh
           imports: https://cnb.cool/ai-alchemy-factory/project-secrets/-/blob/main/firecrawl-lite-ssh.yml
+          env:
+            DEPLOY_IMAGE: docker.cnb.cool/ai-alchemy-factory/firecrawl-lite:${CNB_BRANCH}
           settings:
             host: ${REMOTE_HOST}
             port: ${REMOTE_PORT}
             username: ${REMOTE_USERNAME}
             key: ${PRIVATE_KEY}
             script:
-              - VERSION="${CNB_BRANCH}"
-              - IMAGE="docker.cnb.cool/ai-alchemy-factory/firecrawl-lite:${VERSION}"
               - echo "${REGISTRY_TOKEN}" | docker login -u "${REGISTRY_USER}" --password-stdin docker.cnb.cool
-              - docker pull "${IMAGE}"
+              - docker pull ${DEPLOY_IMAGE}
               - docker stop firecrawl-lite || true
               - docker rm firecrawl-lite || true
-              - docker run -d -p 80:80 -p 443:443 --name firecrawl-lite --restart=always -v /opt/firecrawl-lite/caddy-data:/data "${IMAGE}"
+              - docker run -d -p 80:80 -p 443:443 --name firecrawl-lite --restart=always -v /opt/firecrawl-lite/caddy-data:/data ${DEPLOY_IMAGE}
               - sleep 5
               - docker ps | grep firecrawl-lite
 
@@ -106,19 +106,19 @@ $:
         - name: deploy version
           image: cnbcool/ssh
           imports: https://cnb.cool/ai-alchemy-factory/project-secrets/-/blob/main/firecrawl-lite-ssh.yml
+          env:
+            DEPLOY_IMAGE: docker.cnb.cool/ai-alchemy-factory/firecrawl-lite:${DEPLOY_VERSION}
           settings:
             host: ${REMOTE_HOST}
             port: ${REMOTE_PORT}
             username: ${REMOTE_USERNAME}
             key: ${PRIVATE_KEY}
             script:
-              - VERSION="${DEPLOY_VERSION}"
-              - IMAGE="docker.cnb.cool/ai-alchemy-factory/firecrawl-lite:${VERSION}"
               - echo "${REGISTRY_TOKEN}" | docker login -u "${REGISTRY_USER}" --password-stdin docker.cnb.cool
-              - docker pull "${IMAGE}"
+              - docker pull ${DEPLOY_IMAGE}
               - docker stop firecrawl-lite || true
               - docker rm firecrawl-lite || true
-              - docker run -d -p 80:80 -p 443:443 --name firecrawl-lite --restart=always -v /opt/firecrawl-lite/caddy-data:/data "${IMAGE}"
+              - docker run -d -p 80:80 -p 443:443 --name firecrawl-lite --restart=always -v /opt/firecrawl-lite/caddy-data:/data ${DEPLOY_IMAGE}
               - docker ps | grep firecrawl-lite
   
   rollback:
@@ -126,17 +126,17 @@ $:
         - name: rollback version
           image: cnbcool/ssh
           imports: https://cnb.cool/ai-alchemy-factory/project-secrets/-/blob/main/firecrawl-lite-ssh.yml
+          env:
+            DEPLOY_IMAGE: docker.cnb.cool/ai-alchemy-factory/firecrawl-lite:${ROLLBACK_VERSION}
           settings:
             host: ${REMOTE_HOST}
             port: ${REMOTE_PORT}
             username: ${REMOTE_USERNAME}
             key: ${PRIVATE_KEY}
             script:
-              - VERSION="${ROLLBACK_VERSION}"
-              - IMAGE="docker.cnb.cool/ai-alchemy-factory/firecrawl-lite:${VERSION}"
               - echo "${REGISTRY_TOKEN}" | docker login -u "${REGISTRY_USER}" --password-stdin docker.cnb.cool
-              - docker pull "${IMAGE}"
+              - docker pull ${DEPLOY_IMAGE}
               - docker stop firecrawl-lite || true
               - docker rm firecrawl-lite || true
-              - docker run -d -p 80:80 -p 443:443 --name firecrawl-lite --restart=always -v /opt/firecrawl-lite/caddy-data:/data "${IMAGE}"
+              - docker run -d -p 80:80 -p 443:443 --name firecrawl-lite --restart=always -v /opt/firecrawl-lite/caddy-data:/data ${DEPLOY_IMAGE}
               - docker ps | grep firecrawl-lite
