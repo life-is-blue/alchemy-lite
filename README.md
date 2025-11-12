@@ -44,8 +44,8 @@ crawler/
 npm install
 npm run dev
 
-# Terminal 2: Start frontend
-cd public && python3 -m http.server 8080
+# Terminal 2: Start frontend (bind to IPv4)
+cd public && python3 -m http.server 8080 --bind 127.0.0.1
 
 # Terminal 3: Start reverse proxy
 caddy run --config config/Caddyfile

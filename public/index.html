@@ -40,8 +40,30 @@
             <label for="renderJS">渲染 JavaScript（较慢，适用于单页应用）</label>
           </div>
           <div class="checkbox-wrapper">
-            <input type="checkbox" id="autoClickTabs" name="autoClickTabs">
-            <label for="autoClickTabs">自动点击标签页（适用于文档站点）</label>
+            <input type="checkbox" id="enableCrawl" name="enableCrawl">
+            <label for="enableCrawl">爬取相同目录的所有页面</label>
+          </div>
+        </div>
+
+        <!-- Crawl options (hidden by default) -->
+        <div id="crawlOptions" class="crawl-options" style="display:none">
+          <div class="crawl-hint">
+            将爬取路径前缀为 <code id="detectedPrefix">/</code> 的所有页面
+          </div>
+          
+          <div class="inline-controls">
+            <div class="form-group-inline">
+              <label for="maxPages">最大页数</label>
+              <input type="number" id="maxPages" name="maxPages" value="50" min="1" max="200" />
+            </div>
+            
+            <div class="form-group-inline">
+              <label for="displayMode">结果展示</label>
+              <select id="displayMode" name="displayMode">
+                <option value="merged">合并为单文件</option>
+                <option value="list">分页列表</option>
+              </select>
+            </div>
           </div>
         </div>
 
