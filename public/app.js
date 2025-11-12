@@ -24,7 +24,11 @@ const UIElements = {
   form: null,
   urlInput: null,
   renderJSCheckbox: null,
-  autoClickTabsCheckbox: null,
+  enableCrawlCheckbox: null,
+  crawlOptions: null,
+  detectedPrefix: null,
+  maxPagesInput: null,
+  displayModeSelect: null,
   submitBtn: null,
   loading: null,
   errorDiv: null,
@@ -37,7 +41,11 @@ const UIElements = {
     this.form = document.getElementById('scrapeForm');
     this.urlInput = document.getElementById('url');
     this.renderJSCheckbox = document.getElementById('renderJS');
-    this.autoClickTabsCheckbox = document.getElementById('autoClickTabs');
+    this.enableCrawlCheckbox = document.getElementById('enableCrawl');
+    this.crawlOptions = document.getElementById('crawlOptions');
+    this.detectedPrefix = document.getElementById('detectedPrefix');
+    this.maxPagesInput = document.getElementById('maxPages');
+    this.displayModeSelect = document.getElementById('displayMode');
     this.submitBtn = document.getElementById('submitBtn');
     this.loading = document.getElementById('loading');
     this.errorDiv = document.getElementById('error');
@@ -154,6 +162,55 @@ const BatchProcessor = {
     }
   }
 };
+
+//=============================================================================
+// Crawl-related Functions
+//=============================================================================
+
+/**
+ * 提取URL的路径前缀（用于crawl）
+ * @throws {Error} 如果URL无效
+ */
+function extractPathPrefix(url) {
+  try {
+    const urlObj = new URL(url);
+    const path = urlObj.pathname;
+    
+    // 规则1: 如果路径以.html/.htm/.php/.asp结尾，去掉文件名
+    if (/\.(html?|php|asp)$/i.test(path)) {
+      return path.substring(0, path.lastIndexOf('/') + 1);
+    }
+    
+    // 规则2: 如果路径以/结尾，直接使用
+    if (path.endsWith('/')) {
+      return path;
+    }
+    
+    // 规则3: 否则视为目录，添加/
+    return path + '/';
+    
+  } catch (error) {
+    throw new Error('Invalid URL for crawl prefix extraction');
+  }
+}
+
+/**
+ * 更新检测到的pathPrefix显示
+ */
+function updateDetectedPrefix() {
+  const url = UIElements.urlInput.value.trim();
+  if (!url) {
+    UIElements.detectedPrefix.textContent = '/';
+    return;
+  }
+  
+  try {
+    const prefix = extractPathPrefix(url);
+    UIElements.detectedPrefix.textContent = prefix;
+  } catch (error) {
+    UIElements.detectedPrefix.textContent = '(无效的 URL)';
+  }
+}
 
 //=============================================================================
 // Utility Functions
@@ -279,7 +336,6 @@ async function scrapeURL(url, options = {}) {
       body: JSON.stringify({
         url: url,
         renderJS: UIElements.renderJSCheckbox.checked,
-        autoClickTabs: UIElements.autoClickTabsCheckbox.checked,
       }),
       signal: controller.signal,
     });
@@ -310,6 +366,83 @@ async function scrapeURL(url, options = {}) {
 //=============================================================================
 // Batch Processing Logic
 //=============================================================================
+
+/**
+ * 显示合并的crawl结果
+ */
+function displayMergedCrawlResults(data) {
+  const timestamp = new Date().toLocaleDateString('zh-CN');
+  const successPages = data.pages.filter(p => p.success);
+  const failedPages = data.pages.filter(p => !p.success);
+  
+  let markdown = `# 爬取结果汇总 (${data.totalPages} 页)\n`;
+  markdown += `> 路径前缀: ${extractPathPrefix(data.baseUrl)}\n`;
+  markdown += `> 生成时间: ${timestamp}\n`;
+  markdown += `> 成功: ${successPages.length} | 失败: ${failedPages.length}\n\n`;
+  markdown += `---\n\n`;
+  
+  // 成功的页面
+  if (successPages.length > 0) {
+    successPages.forEach((page, index) => {
+      markdown += `### 第 ${index + 1} 页: ${escapeMarkdown(page.url)}\n\n`;
+      markdown += page.markdown || '';
+      markdown += `\n\n---\n\n`;
+    });
+  }
+  
+  // 失败的页面
+  if (failedPages.length > 0) {
+    markdown += `## ❌ 失败的页面\n\n`;
+    failedPages.forEach((page, index) => {
+      markdown += `${index + 1}. ${escapeMarkdown(page.url)}\n`;
+      markdown += `   错误: ${escapeMarkdown(page.error || 'Unknown error')}\n\n`;
+    });
+  }
+  
+  UIElements.markdownTextarea.value = markdown;
+  UIElements.resultDiv.classList.add('show');
+  
+  // 标记为batch模式，用于下载文件名
+  BatchProcessor.setBatchMode(true);
+}
+
+/**
+ * 显示分页的crawl结果
+ */
+function displayPaginatedCrawlResults(data) {
+  // 简化版：仅显示第一页 + 提示
+  // 完整实现需要额外的UI元素（页面列表）
+  
+  if (data.pages.length === 0) {
+    showError('未爬取到任何页面');
+    return;
+  }
+  
+  const firstPage = data.pages[0];
+  
+  // 显示第一页内容
+  let markdown = `# 爬取结果 (共 ${data.totalPages} 页)\n\n`;
+  markdown += `> 当前显示: 第 1 页\n`;
+  markdown += `> 路径前缀: ${extractPathPrefix(data.baseUrl)}\n\n`;
+  markdown += `## ${firstPage.url}\n\n`;
+  markdown += firstPage.markdown || '';
+  
+  // 添加页面列表
+  markdown += `\n\n---\n\n## 所有页面列表\n\n`;
+  data.pages.forEach((page, index) => {
+    const status = page.success ? '✓' : '✗';
+    markdown += `${index + 1}. ${status} ${escapeMarkdown(page.url)}\n`;
+  });
+  
+  UIElements.markdownTextarea.value = markdown;
+  UIElements.resultDiv.classList.add('show');
+  
+  // 保存pages数据用于下载
+  BatchProcessor.setBatchMode(true);
+  data.pages.forEach(page => {
+    BatchProcessor.addResult(page.url, page.markdown || '', page.success, page.error);
+  });
+}
 
 /**
  * 生成合并的Markdown（包括失败摘要）
@@ -383,6 +516,87 @@ async function handleSingleScrape(url) {
     
   } catch (error) {
     showError(error.message);
+  } finally {
+    UIElements.submitBtn.disabled = false;
+    UIElements.loading.style.display = 'none';
+  }
+}
+
+/**
+ * 处理crawl请求
+ */
+async function handleCrawl(url) {
+  UIElements.submitBtn.disabled = true;
+  UIElements.loading.style.display = 'inline-flex';
+  
+  const pathPrefix = extractPathPrefix(url);
+  const maxPages = parseInt(UIElements.maxPagesInput.value, 10);
+  
+  // 验证maxPages
+  if (isNaN(maxPages) || maxPages < 1 || maxPages > 200) {
+    showError('页数必须在 1-200 之间');
+    UIElements.submitBtn.disabled = false;
+    UIElements.loading.style.display = 'none';
+    return;
+  }
+  
+  updateProgress(0, maxPages);
+  
+  // Crawl通常需要更长时间，使用10分钟超时
+  const crawlTimeout = 10 * 60 * 1000; // 10 minutes
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), crawlTimeout);
+  
+  try {
+    const response = await fetch(`${Config.API_BASE}/crawl`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        url: url,
+        renderJS: UIElements.renderJSCheckbox.checked,
+        pathPrefix: pathPrefix,
+        maxPages: maxPages,
+      }),
+      signal: controller.signal,
+    });
+    
+    clearTimeout(timeoutId);
+    
+    const data = await response.json();
+    
+    if (!response.ok || !data.success) {
+      throw new Error(data.error || `HTTP ${response.status}`);
+    }
+    
+    // 根据显示模式展示结果
+    const displayMode = UIElements.displayModeSelect.value;
+    if (displayMode === 'merged') {
+      displayMergedCrawlResults(data);
+    } else {
+      displayPaginatedCrawlResults(data);
+    }
+    
+    // 显示成功消息
+    showSuccess(`爬取完成：共 ${data.totalPages} 页`);
+    
+    // 平滑滚动到结果
+    const scrollTimeoutId = setTimeout(() => {
+      UIElements.resultDiv.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      BatchProcessor.removeTimeout(scrollTimeoutId);
+    }, 100);
+    BatchProcessor.addTimeout(scrollTimeoutId);
+    
+  } catch (error) {
+    clearTimeout(timeoutId);
+    
+    // 分类错误以便更好的用户反馈
+    if (error.name === 'AbortError') {
+      showError('爬取超时，请减少页数或稍后重试');
+    } else if (error.message.includes('Failed to fetch')) {
+      showError('网络连接失败');
+    } else {
+      showError(`爬取失败：${error.message}`);
+    }
   } finally {
     UIElements.submitBtn.disabled = false;
     UIElements.loading.style.display = 'none';
@@ -474,10 +688,21 @@ function handleFormSubmit(e) {
     return;
   }
   
-  if (urls.length > 1) {
-    handleBatchScrape(urls);
+  // 检查是否启用crawl模式
+  if (UIElements.enableCrawlCheckbox.checked) {
+    // Crawl模式：只能单个URL
+    if (urls.length > 1) {
+      showError('爬取模式下只能输入单个 URL');
+      return;
+    }
+    handleCrawl(urls[0]);
   } else {
-    handleSingleScrape(urls[0]);
+    // 普通模式：单页或批量
+    if (urls.length > 1) {
+      handleBatchScrape(urls);
+    } else {
+      handleSingleScrape(urls[0]);
+    }
   }
 }
 
@@ -574,6 +799,32 @@ function handleDownloadClick() {
 //=============================================================================
 
 /**
+ * 处理enableCrawl checkbox变化
+ */
+function handleEnableCrawlChange() {
+  const enabled = UIElements.enableCrawlCheckbox.checked;
+  
+  if (enabled) {
+    // 显示crawl选项
+    UIElements.crawlOptions.style.display = 'block';
+    // 更新检测到的prefix
+    updateDetectedPrefix();
+  } else {
+    // 隐藏crawl选项
+    UIElements.crawlOptions.style.display = 'none';
+  }
+}
+
+/**
+ * 处理URL输入变化（更新pathPrefix）
+ */
+function handleUrlChange() {
+  if (UIElements.enableCrawlCheckbox.checked) {
+    updateDetectedPrefix();
+  }
+}
+
+/**
  * 初始化应用
  */
 function initApp() {
@@ -585,6 +836,10 @@ function initApp() {
   BatchProcessor.addEventListener(UIElements.urlInput, 'input', handleTextareaInput);
   BatchProcessor.addEventListener(UIElements.copyBtn, 'click', handleCopyClick);
   BatchProcessor.addEventListener(UIElements.downloadBtn, 'click', handleDownloadClick);
+  
+  // Crawl相关事件监听
+  BatchProcessor.addEventListener(UIElements.enableCrawlCheckbox, 'change', handleEnableCrawlChange);
+  BatchProcessor.addEventListener(UIElements.urlInput, 'blur', handleUrlChange);
   
   console.log('Firecrawl Lite initialized');
 }
