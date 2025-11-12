@@ -1,0 +1,53 @@
+# Dependencies
+node_modules/
+.npm/
+
+# Build outputs
+dist/
+build/
+
+# Environment files
+.env
+.env.*
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Test files
+tests/
+*.test.ts
+*.test.js
+*.spec.ts
+*.spec.js
+
+# CI/CD configs (不需要部署到 Vercel)
+.cnb.yml
+.husky/
+Dockerfile
+docker-entrypoint.sh
+Caddyfile
+Caddyfile.prod
+
+# Backend source code (只部署前端)
+src/
+package.json
+package-lock.json
+tsconfig.json
+vitest.config.ts
+
+# Documentation (减少部署大小)
+*.md
+!public/README.md
