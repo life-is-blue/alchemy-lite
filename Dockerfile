@@ -35,7 +35,8 @@ RUN apk add --no-cache \
     ttf-freefont \
     caddy \
     tini \
-    curl
+    curl \
+    libcap
 
 # Tell Puppeteer to use installed Chromium
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
