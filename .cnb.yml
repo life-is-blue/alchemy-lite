@@ -121,6 +121,8 @@ main:
         - name: auto-deploy-to-production
           image: cnbcool/ssh
           imports: https://cnb.cool/ai-alchemy-factory/project-secrets/-/blob/main/firecrawl-lite-ssh.yml
+          env:
+            DEPLOY_VERSION: ${CNB_BRANCH}
           settings:
             host: ${REMOTE_HOST}
             username: ${REMOTE_USERNAME}
@@ -128,9 +130,9 @@ main:
             port: ${REMOTE_PORT}
             command_timeout: 5m
             script: |
-              VERSION="${CNB_BRANCH}"
+              VERSION="${DEPLOY_VERSION}"
               if [ -z "${VERSION}" ]; then
-                echo "==> ERROR: CNB_BRANCH is not set."
+                echo "==> ERROR: DEPLOY_VERSION is not set."
                 exit 1
               fi
               
