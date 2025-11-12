@@ -577,49 +577,77 @@ main:
 
 ## [已知问题与解决方案](https://docs.cnb.cool/zh/build/env.html#known-issues)
 
-### stdout 导出中混入日志输出的问题
+### 跨阶段变量传递的两个常见坑
+
+#### 问题1：stdout 导出中混入日志输出
 
 **症状**: 使用 `exports: stdout: VAR_NAME` 时，即使所有日志都重定向到 stderr（`>&2`），仍然会导出包含日志内容的混合输出。
 
-**根因**: CNB 的 stdout 导出机制会捕获脚本执行的所有 stdout 内容，不仅仅是最后输出到 stdout 的内容。这在复杂构建流程中可能导致版本号等关键变量被污染。
+**根因**: CNB 的 stdout 导出机制会捕获脚本执行的所有 stdout 内容，不仅仅是最后输出到 stdout 的内容。
 
-**示例错误**（来自实际项目经验）:
+**示例错误**:
 ```
 ERROR: invalid tag "docker.cnb.cool/repo:==> Building release v1.6.4\n[npm build output...]"
 ```
 
-**解决方案**: 使用文件传递而不是 stdout 导出：
+#### 问题2：/tmp 不会在不同容器间持久化
+
+**症状**: 在一个 stage 写入 `/tmp/file.txt`，下一个使用不同 image 的 stage 无法读取该文件。
+
+**根因**: 每个 stage 运行在**独立的容器**中。CNB 为每个 stage 启动一个新容器，旧容器的 `/tmp` 在容器销毁时也随之消失。
+
+**示例错误**:
+```
+==> FATAL: /tmp/release-version.txt not found. Previous stage may have failed.
+```
+
+#### 解决方案：使用 /workspace
+
+`/workspace` 是 CNB 在所有 stage 中共享的挂载点（通过 volume），因此可以安全地用于跨阶段数据传递：
 
 ```yaml
-# 方案：在不同阶段间通过文件传递数据
-
 stages:
   - name: stage-1
+    # 隐含使用 docker.image: node:20
     script: |
       set -eu
       VERSION="v1.6.4"
-      # 写入到文件而不是导出到 stdout
-      printf "%s" "${VERSION}" > /tmp/release-version.txt
+      # 写入到 workspace（在所有 stage 中可用）
+      printf "%s" "${VERSION}" > /workspace/.release-version
   
   - name: stage-2
-    image: docker:24-cli  # 不同的 image 上下文
+    image: docker:24-cli  # 不同的镜像 = 不同的容器
     script: |
       set -eu
-      # 从文件读取，可靠地跨阶段传递
-      if [ ! -f /tmp/release-version.txt ]; then
-        echo "==> FATAL: Version file not found"
+      # 从 workspace 读取（文件在新容器中可用）
+      if [ ! -f /workspace/.release-version ]; then
+        echo "==> FATAL: Version file not found in workspace"
         exit 1
       fi
-      VERSION=$(cat /tmp/release-version.txt)
+      VERSION=$(cat /workspace/.release-version)
       echo "==> Using version: ${VERSION}"
+
+  - name: stage-3
+    image: cnbcool/ssh  # 又是不同的镜像
+    script: |
+      # 同样可以读取 /workspace 中的文件
+      VERSION=$(cat /workspace/.release-version)
 ```
 
-**优点**：
-- ✓ 避免 stdout 混入问题
-- ✓ 在不同 image 上下文中可靠工作（node → docker → ssh）
-- ✓ 显式且易于调试
-- ✓ 支持快速失败（文件不存在或为空时立即退出）
+**为什么 /workspace 可行**:
+- ✓ CNB 在每个 stage 都挂载 `/workspace`（通过 `-v /path/to/workspace:/workspace`）
+- ✓ 无论使用哪个 image，`/workspace` 都指向同一个宿主机目录
+- ✓ 容器销毁后，workspace 中的文件仍然存在
+- ✓ 下一个容器启动时可以读取之前写入的文件
 
-**参考**: 项目内的 `.cnb.yml` 对该模式的完整实现
+**对比总结**:
+
+| 方案 | 跨阶段 | 跨 image | 缺点 |
+|------|--------|---------|------|
+| `exports: stdout` | ✓ | ✓ | 会混入日志输出 |
+| `/tmp/file.txt` | ✗ | ✗ | 容器销毁时文件消失 |
+| `/workspace/file.txt` | ✓ | ✓ | 文件会留在 workspace（可在清理脚本中删除） |
+
+**参考**: 项目的 v1.6.6 版本实现了这个模式
 
 0%
