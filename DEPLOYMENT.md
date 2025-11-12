@@ -35,22 +35,27 @@ caddy run --config Caddyfile
 
 ### Architecture
 
-**Automated Deployment (via .cnb.yml):**
+**Single-Container Architecture (via .cnb.yml):**
 
 ```
-User → http://server-ip:80
+User → https://izoa.fun (HTTPS with auto SSL)
   ↓
-Caddy Reverse Proxy (Docker container, port 80)
-  ├─ /         → Frontend (Nginx container, internal port 80)
-  └─ /api/*    → Backend (Node.js container, internal port 3000)
+Docker Container (firecrawl-lite)
+  ├─ Caddy Reverse Proxy (ports 80 + 443)
+  │   ├─ Auto SSL via Let's Encrypt
+  │   ├─ HTTP → HTTPS redirect
+  │   ├─ /api/* → Backend (localhost:3000)
+  │   └─ /*     → Frontend (/app/public)
+  └─ Node.js Backend (localhost:3000)
 ```
 
-**All 3 containers run on the same server, connected via Docker network.**
+**Everything runs in a single container with dual-process architecture.**
 
 **Philosophy:**
 - Single-command deployment: `git tag v1.0.0 && git push --tags`
-- Self-contained: No external dependencies (Cloudflare Pages, etc.)
-- Rollback-friendly: Backend-only rollback preserves frontend
+- Self-contained: Frontend, backend, and proxy in one image
+- Auto HTTPS: Caddy handles SSL certificates automatically
+- Zero downtime rollback: Replace entire container atomically
 
 ---
 
@@ -101,28 +106,38 @@ cd public && python3 -m http.server 8080
 
 ### Step 3: Automated Production Deployment
 
-**Architecture deployed by `.cnb.yml`:**
+**Prerequisites:**
 
-1. **Backend Container** (`firecrawl-lite-backend`)
-   - Runs Node.js app from Docker image
-   - Internal network only (no exposed ports)
-   - Connected to `firecrawl-network`
+1. **DNS Configuration**
+   ```bash
+   # Set A record for your domain
+   izoa.fun → <Your-VPS-IP>
+   
+   # Verify DNS propagation
+   dig izoa.fun +short
+   # Should return your VPS IP
+   ```
 
-2. **Frontend Container** (`firecrawl-lite-frontend`)
-   - Nginx serving `public/` directory
-   - Files fetched from GitHub release tag
-   - Internal network only
+2. **Firewall Configuration**
+   ```bash
+   # Ubuntu/Debian (ufw)
+   sudo ufw allow 80/tcp   # HTTP + ACME verification
+   sudo ufw allow 443/tcp  # HTTPS
+   sudo ufw reload
+   
+   # CentOS/RHEL (firewalld)
+   sudo firewall-cmd --permanent --add-service=http
+   sudo firewall-cmd --permanent --add-service=https
+   sudo firewall-cmd --reload
+   
+   # Cloud provider security groups
+   # Make sure ports 80 and 443 are open in your cloud console
+   ```
 
-3. **Reverse Proxy** (`firecrawl-lite-proxy`)
-   - Caddy routes traffic:
-     - `/api/*` → Backend container
-     - `/*` → Frontend container
-   - Exposes port 80 to internet
-
-**Deployment process:**
+**Deployment Process:**
 
 ```bash
-# 1. Create a release
+# 1. Create a release tag
 git tag v1.0.0
 git push origin v1.0.0
 
@@ -135,22 +150,37 @@ git push origin v1.0.0
 ```
 
 **What happens on the server:**
+
 ```bash
-# Pulls image from registry
+# 1. Create persistent volume for SSL certificates
+mkdir -p /opt/firecrawl-lite/caddy-data
+
+# 2. Pull image from registry
 docker pull docker.cnb.cool/ai-alchemy-factory/firecrawl-lite:v1.0.0
 
-# Creates Docker network (if not exists)
-docker network create firecrawl-network
+# 3. Stop old container (if exists)
+docker stop firecrawl-lite
+docker rm firecrawl-lite
 
-# Starts 3 containers:
-# - Backend (no exposed ports)
-# - Frontend (Nginx with public/ files)
-# - Caddy (port 80, routes traffic)
+# 4. Start single container with dual-process architecture
+docker run -d \
+  -p 80:80 \      # HTTP + ACME challenge
+  -p 443:443 \    # HTTPS
+  --name firecrawl-lite \
+  --restart=always \
+  -v /opt/firecrawl-lite/caddy-data:/data \  # Persistent SSL cert storage
+  -e VERSION="v1.0.0" \
+  docker.cnb.cool/ai-alchemy-factory/firecrawl-lite:v1.0.0
+
+# 5. Caddy automatically obtains Let's Encrypt certificate
+# First deployment: may take 10-15 seconds
+# Subsequent deployments: uses cached certificate
 ```
 
 **Access:**
-- Frontend: `http://server-ip/`
-- API: `http://server-ip/api/health`
+- Frontend: `https://izoa.fun/`
+- API: `https://izoa.fun/api/health`
+- HTTP: `http://izoa.fun/` (auto-redirects to HTTPS)
 
 ---
 
@@ -196,66 +226,103 @@ railway open
 
 ---
 
-### Step 5: Verify Deployment
+### Step 4: Verify Deployment
 
+**Check container status:**
 ```bash
-# 1. Test frontend
-curl http://server-ip/
-# Should return HTML (homepage)
-
-# 2. Test backend health check
-curl http://server-ip/api/health
-# Should return { "status": "ok", "timestamp": "..." }
-
-# 3. Test full workflow
-# Visit http://server-ip in browser
-# Enter a URL to scrape
-# Check batch results, downloads, etc.
-```
-
-**Check running containers:**
-```bash
+# 1. Check if container is running
 docker ps | grep firecrawl-lite
 
-# Should show 3 containers:
-# firecrawl-lite-backend
-# firecrawl-lite-frontend
-# firecrawl-lite-proxy
+# Should show 1 container:
+# CONTAINER ID   IMAGE                                              PORTS                        NAMES
+# abc123...      docker.cnb.cool/.../firecrawl-lite:v1.0.0         0.0.0.0:80->80, 443->443     firecrawl-lite
+```
+
+**Check SSL certificate:**
+```bash
+# 2. Check certificate provisioning logs
+docker logs firecrawl-lite | grep -i certificate
+
+# Should see lines like:
+# [INFO] certificate obtained successfully
+# [INFO] Serving HTTPS on https://izoa.fun
+```
+
+**Test HTTPS endpoints:**
+```bash
+# 3. Test HTTPS health check
+curl https://izoa.fun/api/health
+# Should return: {"status":"ok","timestamp":"...","version":"v1.0.0"}
+
+# 4. Verify SSL certificate
+curl -vI https://izoa.fun 2>&1 | grep -i "issuer"
+# Should show: issuer: C=US; O=Let's Encrypt; CN=...
+
+# 5. Test HTTP redirect
+curl -I http://izoa.fun
+# Should return: HTTP/1.1 308 Permanent Redirect
+#                Location: https://izoa.fun/
+
+# 6. Test frontend
+curl https://izoa.fun/
+# Should return HTML (homepage with <!DOCTYPE html>...)
+```
+
+**Test in browser:**
+```bash
+# Visit https://izoa.fun in browser
+# - Should show green lock icon (valid SSL)
+# - Enter a URL to scrape
+# - Check batch results, downloads, etc.
 ```
 
 ---
 
 ## FAQ
 
-### Q1: Why are frontend and backend separated?
-**A:** Clear separation of concerns. Backend handles scraping logic, frontend handles UI. Each can scale independently.
+### Q1: How does HTTPS work automatically?
+**A:** Caddy handles everything:
+- Detects the domain name (`izoa.fun`) in Caddyfile
+- Automatically requests certificate from Let's Encrypt
+- Renews certificates before expiration (90-day cycle)
+- Redirects HTTP to HTTPS automatically
 
-### Q2: Can I use a custom domain?
-**A:** Yes. Point your domain's A record to the server IP. Caddy will serve on port 80 (or configure SSL with Caddy's automatic HTTPS).
+### Q2: What if SSL certificate fails to provision?
+**A:** Check these common issues:
+```bash
+# 1. DNS not pointing to server
+dig izoa.fun +short  # Should return your VPS IP
 
-### Q3: How do I enable HTTPS?
-**A:** Modify the Caddyfile in deployment script:
+# 2. Ports not accessible
+nc -zv <server-ip> 80
+nc -zv <server-ip> 443
+
+# 3. Check Caddy logs for errors
+docker logs firecrawl-lite 2>&1 | grep -i "acme\|error\|certificate"
+```
+
+### Q3: Can I use a different domain?
+**A:** Yes. Modify `Caddyfile.prod`:
 ```caddyfile
-example.com {  # Replace :80 with your domain
-  route /api* {
-    reverse_proxy firecrawl-lite-backend:3000
-  }
-  route /* {
-    reverse_proxy firecrawl-lite-frontend:80
-  }
+your-domain.com {  # Change this line
+  reverse_proxy /api/* localhost:3000
+  root * /app/public
+  file_server
+  encode gzip
 }
 ```
-Caddy automatically provisions Let's Encrypt certificates.
+Then rebuild and redeploy the image.
 
-### Q4: How do I rollback?
-**A:** Trigger manual `rollback` operation in CI with `ROLLBACK_VERSION=v1.0.0`. This only restarts the backend container with the old version, keeping frontend and proxy unchanged.
+### Q4: How do I rollback to a previous version?
+**A:** Trigger manual `rollback` operation in CI with `ROLLBACK_VERSION=v1.0.0`. This replaces the entire container with the old version. SSL certificates are preserved in `/opt/firecrawl-lite/caddy-data`.
 
-### Q5: Can I deploy to Cloudflare Pages instead?
-**A:** Yes, but you'll need to:
-1. Deploy `public/` to Cloudflare Pages manually
-2. Deploy backend to Railway/VPS
-3. Configure Cloudflare Workers or Origin Rules to route `/api/*` to backend
-(This approach is documented separately in DEPLOYMENT.md Step 4)
+### Q5: Why single container instead of separate frontend/backend?
+**A:** Simplicity and reliability:
+- Fewer moving parts (1 container vs 3)
+- No Docker network configuration needed
+- Frontend is only 272KB, minimal overhead
+- Atomic deployments (replace everything at once)
+- Easier debugging (single container to inspect)
 
 ---
 
@@ -310,18 +377,21 @@ git push origin v1.0.1
 **Rollback to previous version:**
 ```bash
 # Trigger 'rollback' operation with ROLLBACK_VERSION=v1.0.0
-# Only backend is replaced, frontend and proxy remain unchanged
+# Entire container is replaced atomically
+# SSL certificates are preserved in /opt/firecrawl-lite/caddy-data
 ```
 
 **Update environment variables:**
 ```bash
 # SSH to server
-docker stop firecrawl-lite-backend
-docker rm firecrawl-lite-backend
+docker stop firecrawl-lite
+docker rm firecrawl-lite
 docker run -d \
-  --name firecrawl-lite-backend \
-  --network firecrawl-network \
+  -p 80:80 \
+  -p 443:443 \
+  --name firecrawl-lite \
   --restart=always \
+  -v /opt/firecrawl-lite/caddy-data:/data \
   -e VERSION="v1.0.0" \
   -e NEW_VAR="value" \
   docker.cnb.cool/ai-alchemy-factory/firecrawl-lite:v1.0.0
@@ -332,70 +402,72 @@ docker run -d \
 ## Security
 
 ✅ **Implemented:**
-- Backend and frontend isolated via Docker network
+- Single-container architecture (reduced attack surface)
+- Auto HTTPS via Let's Encrypt (SSL certificates)
 - API keys via environment variables (not in code)
-- Containers run as non-root user
+- Container runs as non-root user (nodejs:nodejs)
 
 ⚠️ **Recommendations:**
-- Use firewall to block direct access to ports 3000, 8080
-- Enable HTTPS with Caddy + Let's Encrypt
+- Backend port 3000 not exposed (internal only, proxied by Caddy)
+- Caddy handles all external traffic on 80/443
 - Rotate API keys periodically
 - Monitor unusual traffic patterns
-- Set rate limits in Caddy configuration
+- Set rate limits in Caddyfile if needed
 
 ---
 
 ## Troubleshooting
 
-### Frontend not accessible
+### Container not starting
 ```bash
-# Check if containers are running
-docker ps | grep firecrawl-lite
+# Check container status
+docker ps -a | grep firecrawl-lite
 
-# Check frontend logs
-docker logs firecrawl-lite-frontend
+# If exited, check logs
+docker logs firecrawl-lite
 
-# Test direct access (should work if proxy is down)
-curl http://localhost:8080
+# Common issues:
+# - Port already in use (80 or 443)
+# - Permission denied on /opt/firecrawl-lite/caddy-data
 ```
 
-### Backend API not accessible
+### Backend not responding
 ```bash
-# Check backend logs
-docker logs firecrawl-lite-backend
+# Check if backend process is running inside container
+docker exec firecrawl-lite ps aux | grep node
 
-# Test direct backend access
-docker exec firecrawl-lite-backend wget -O- http://localhost:3000/api/health
+# Should show: node /app/dist/index.js
 
-# Check if backend is in network
-docker network inspect firecrawl-network
+# Test backend directly
+docker exec firecrawl-lite curl -sf http://localhost:3000/api/health
+
+# If fails, check backend logs
+docker logs firecrawl-lite | grep -v "caddy"
 ```
 
-### Proxy not routing correctly
+### Caddy not routing correctly
 ```bash
 # Check Caddy logs
-docker logs firecrawl-lite-proxy
+docker logs firecrawl-lite | grep -i caddy
 
-# Verify Caddyfile syntax
-cat /tmp/Caddyfile
+# Verify Caddyfile inside container
+docker exec firecrawl-lite cat /etc/caddy/Caddyfile
 
-# Test proxy manually
-curl -v http://localhost/api/health
+# Test routing manually
+docker exec firecrawl-lite curl -v http://localhost:80/api/health
+docker exec firecrawl-lite curl -v http://localhost:80/
 ```
 
-### Containers not communicating
+### SSL certificate issues
 ```bash
-# Verify Docker network
-docker network inspect firecrawl-network
+# Check certificate status
+docker logs firecrawl-lite | grep -i "certificate\|acme"
 
-# Should show all 3 containers in the network
+# Verify certificate files exist
+docker exec firecrawl-lite ls -la /data/caddy/certificates/
 
-# Recreate network if needed
-docker network rm firecrawl-network
-docker network create firecrawl-network
-
-# Restart containers to rejoin network
-docker restart firecrawl-lite-backend firecrawl-lite-frontend firecrawl-lite-proxy
+# Force certificate renewal (if expired)
+docker exec firecrawl-lite caddy reload --config /etc/caddy/Caddyfile
 ```
 
 ### 浏览器池耗尽（Browser Pool Exhausted）
@@ -561,13 +633,14 @@ tail -f app.log | grep 'Max'
 
 ## Cost Estimation
 
-**Self-hosted VPS:**
+**Self-hosted VPS (Recommended):**
 
 | Item | Cost | Notes |
 |------|------|-------|
 | VPS (1GB RAM) | $5-10/month | DigitalOcean, Linode, Vultr |
 | VPS (2GB RAM) | $10-20/month | Recommended for Puppeteer |
-| Domain | $10-15/year | Optional, can use IP address |
+| Domain (izoa.fun) | $10-15/year | Already owned |
+| SSL Certificate | **Free** | Let's Encrypt via Caddy |
 | **Total** | **$5-20/month** | Puppeteer requires at least 1GB RAM |
 
 **Managed Platform (Railway/Render):**
@@ -576,22 +649,15 @@ tail -f app.log | grep 'Max'
 |------|------|-------|
 | Railway (1GB RAM) | $5-10/month | Auto-scaling |
 | Render (1GB RAM) | $7/month | Fixed price |
-| Domain | $10-15/year | Optional |
+| Domain | $10-15/year | Already owned |
+| SSL Certificate | **Free** | Included |
 | **Total** | **$5-15/month** | Easier to manage, less control |
 
-**Hybrid (Cloudflare + VPS):**
-
-| Item | Cost | Notes |
-|------|------|-------|
-| Cloudflare Pages | Free | Unlimited bandwidth |
-| Cloudflare Workers | $0-5/month | 100k req/day free |
-| VPS for backend | $5-10/month | 1GB RAM minimum |
-| **Total** | **$5-15/month** | Best performance, CDN included |
-
 **Notes:**
+- **Single-container architecture saves $0** but reduces complexity
 - Free tier VPS (512MB) not recommended - Puppeteer needs 600MB+
 - Reduce cost: Set `MAX_BROWSERS=2` (trades performance for memory)
-- Self-hosted gives full control but requires more setup
+- SSL is free with Let's Encrypt (auto-renewal via Caddy)
 
 ---
 
@@ -600,33 +666,50 @@ tail -f app.log | grep 'Max'
 ```
 Internet
    ↓
-Port 80 (Public)
+DNS (izoa.fun)
    ↓
-┌─────────────────────────────────────────────┐
-│ Caddy Reverse Proxy (firecrawl-lite-proxy) │
-│ - Routes /api/* to backend                  │
-│ - Routes /* to frontend                     │
-└─────────────┬───────────────────────────────┘
-              │
-      Docker Network (firecrawl-network)
-              │
-    ┌─────────┴──────────┐
-    │                    │
-    ▼                    ▼
-┌─────────┐      ┌──────────────┐
-│ Backend │      │   Frontend   │
-│ Node.js │      │    Nginx     │
-│ Port    │      │  Serves      │
-│ 3000    │      │  public/     │
-│ (API)   │      │  Port 80     │
-└─────────┘      └──────────────┘
+Ports 80 (HTTP) + 443 (HTTPS)
+   ↓
+┌─────────────────────────────────────────────────┐
+│  Docker Container: firecrawl-lite               │
+│                                                 │
+│  ┌───────────────────────────────────────────┐ │
+│  │ Caddy (PID 1, managed by tini)            │ │
+│  │ - Auto SSL via Let's Encrypt              │ │
+│  │ - HTTP → HTTPS redirect                   │ │
+│  │ - Reverse proxy:                          │ │
+│  │   • /api/* → localhost:3000               │ │
+│  │   • /*     → /app/public (static files)   │ │
+│  └───────────────┬───────────────────────────┘ │
+│                  │                             │
+│                  ↓                             │
+│  ┌───────────────────────────────────────────┐ │
+│  │ Node.js Backend (background process)     │ │
+│  │ - Port 3000 (internal only)               │ │
+│  │ - Puppeteer + Cheerio scraping            │ │
+│  └───────────────────────────────────────────┘ │
+│                                                 │
+│  Volumes:                                       │
+│  - /opt/firecrawl-lite/caddy-data → /data (SSL certificates)   │
+└─────────────────────────────────────────────────┘
 ```
 
 **Deployment is complete when you see:**
 ```
-==> Backend:  http://localhost:3000/api/health
-==> Frontend: http://localhost:8080
-==> Proxy:    http://localhost:80
+==> ✓ Deployment complete
+==> Container status:
+CONTAINER ID   IMAGE                                    PORTS                   NAMES
+abc123...      ...firecrawl-lite:v1.0.0                0.0.0.0:80->80, 443->443 firecrawl-lite
+
+==> Access your app at:
+    https://izoa.fun/ (HTTPS - recommended)
+    http://izoa.fun/  (HTTP - redirects to HTTPS)
 ```
 
-**Access your app at:** `http://server-ip/`
+**Process tree inside container:**
+```
+PID 1:  tini
+  └─ PID 2:  /app/docker-entrypoint.sh
+       ├─ PID 3:  node /app/dist/index.js (background)
+       └─ PID 4:  caddy run (foreground)
+```

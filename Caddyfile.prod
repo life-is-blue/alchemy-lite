@@ -1,0 +1,35 @@
+# Firecrawl Lite - Production Caddyfile
+# Auto-HTTPS enabled: Caddy will automatically obtain Let's Encrypt certificates
+
+izoa.fun {
+	# Automatic HTTPS features:
+	# - Obtains certificates from Let's Encrypt/ZeroSSL
+	# - Redirects HTTP (port 80) to HTTPS (port 443)
+	# - Renews certificates automatically (90-day cycle)
+	
+	# API backend - reverse proxy to Node.js
+	reverse_proxy /api/* localhost:3000
+	
+	# Frontend - serve static files
+	root * /app/public
+	file_server
+	
+	# Performance optimizations
+	encode gzip
+	
+	# Security headers
+	header {
+		# Prevent MIME type sniffing
+		X-Content-Type-Options "nosniff"
+		# Enable XSS protection
+		X-Frame-Options "DENY"
+		# Enable strict transport security (HSTS)
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+	}
+	
+	# Access logging - use stdout for Docker log aggregation
+	log {
+		output stdout
+		format json
+	}
+}

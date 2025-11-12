@@ -21,15 +21,21 @@ RUN npm prune --production
 # Stage 2: Runtime
 FROM node:20-alpine
 
-# Install Chromium for Puppeteer (if browser mode is needed)
-# Comment out these lines if you only use fast mode
+# Install runtime dependencies:
+# - Chromium for Puppeteer (browser mode)
+# - Caddy for reverse proxy + static file serving
+# - tini for proper signal handling (PID 1)
+# - curl for health checks
 RUN apk add --no-cache \
     chromium \
     nss \
     freetype \
     harfbuzz \
     ca-certificates \
-    ttf-freefont
+    ttf-freefont \
+    caddy \
+    tini \
+    curl
 
 # Tell Puppeteer to use installed Chromium
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
@@ -41,15 +47,24 @@ RUN addgroup -g 1001 -S nodejs && \
 
 WORKDIR /app
 
-# Note: public/ is NOT copied intentionally
-# Frontend is deployed separately to Cloudflare Pages (see DEPLOYMENT.md)
-# Copy built application
+# Copy built application, frontend files, and configs
 COPY --from=builder --chown=nodejs:nodejs /app/dist ./dist
 COPY --from=builder --chown=nodejs:nodejs /app/node_modules ./node_modules
 COPY --from=builder --chown=nodejs:nodejs /app/package.json ./
+COPY --from=builder --chown=nodejs:nodejs /app/public ./public
 
+# Copy Caddy config and entrypoint script
+COPY --chown=nodejs:nodejs Caddyfile.prod /etc/caddy/Caddyfile
+COPY --chown=nodejs:nodejs docker-entrypoint.sh /app/
+RUN chmod +x /app/docker-entrypoint.sh
+
+# Grant Caddy permission to bind to privileged ports (80, 443) as non-root user
+# This uses Linux capabilities instead of running as root
+USER root
+RUN setcap CAP_NET_BIND_SERVICE=+eip /usr/sbin/caddy
 USER nodejs
 
-EXPOSE 3000
+# Expose HTTP (80) and HTTPS (443) for Caddy
+EXPOSE 80 443
 
-CMD ["node", "dist/index.js"]
+CMD ["tini", "--", "/app/docker-entrypoint.sh"]
