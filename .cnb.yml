@@ -92,23 +92,18 @@ main:
             npm test
             npm run build
             echo "==> Release build complete."
-            # Write version to workspace for reliable cross-stage passing
-            # Note: /tmp is container-local and disappears between stages
-            # /workspace is shared across all stages in a pipeline
-            printf "%s" "${VERSION}" > /workspace/.release-version
+            # Export VERSION for next stages
+            printf "%s" "${VERSION}"
+          exports:
+            stdout: RELEASE_VERSION
         
         - name: build-and-push-release
           image: docker:24-cli
           script: |
             set -eu
-            # Read version from workspace (shared across stages)
-            if [ ! -f /workspace/.release-version ]; then
-              echo "==> FATAL: .release-version not found in workspace"
-              exit 1
-            fi
-            VERSION=$(cat /workspace/.release-version)
+            VERSION="${RELEASE_VERSION}"
             if [ -z "${VERSION}" ]; then
-              echo "==> FATAL: Version file is empty."
+              echo "==> FATAL: RELEASE_VERSION not set by previous stage" >&2
               exit 1
             fi
             
@@ -119,13 +114,23 @@ main:
             echo "${CNB_TOKEN}" | docker login -u "${CNB_TOKEN_USER_NAME}" --password-stdin "${CNB_DOCKER_REGISTRY}" >&2
             docker pull "${LATEST_TAG}" >&2 || true
             export DOCKER_BUILDKIT=1
-            docker build --cache-from "${LATEST_TAG}" -t "${IMAGE_TAG}" . >&2
-            docker tag "${IMAGE_TAG}" "${LATEST_TAG}" >&2
+            docker build \
+              --build-arg VERSION="${VERSION}" \
+              --label "org.opencontainers.image.version=${VERSION}" \
+              --label "org.opencontainers.image.revision=${CNB_COMMIT_SHA}" \
+              --label "org.opencontainers.image.created=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+              --cache-from "${LATEST_TAG}" \
+              -t "${IMAGE_TAG}" \
+              -t "${LATEST_TAG}" . >&2
             docker push "${IMAGE_TAG}" >&2
             docker push "${LATEST_TAG}" >&2
             echo "==> Pushed: ${IMAGE_TAG}" >&2
             echo "==> Pushed: ${LATEST_TAG}" >&2
             echo "==> Build complete. Auto-deploying to production..." >&2
+            # Re-export VERSION for next stage
+            printf "%s" "${VERSION}"
+          exports:
+            stdout: RELEASE_VERSION
         
         - name: auto-deploy-to-production
           image: cnbcool/ssh
@@ -137,24 +142,52 @@ main:
             port: ${REMOTE_PORT}
             command_timeout: 5m
             script: |
-              # Read version from workspace (shared across stages)
-              if [ ! -f /workspace/.release-version ]; then
-                echo "==> FATAL: .release-version not found in workspace"
-                exit 1
-              fi
-              VERSION=$(cat /workspace/.release-version)
+              VERSION="${RELEASE_VERSION}"
               if [ -z "${VERSION}" ]; then
-                echo "==> ERROR: Version file is empty."
+                echo "==> ERROR: RELEASE_VERSION is not set."
                 exit 1
               fi
               
               IMAGE="docker.cnb.cool/ai-alchemy-factory/firecrawl-lite:${VERSION}"
               
-              echo "==> Deploying version ${VERSION}"
-              
               # Login to registry
-              echo "${REGISTRY_TOKEN}" | docker login -u "${REGISTRY_USER}" --password-stdin docker.cnb.cool
-              docker pull "${IMAGE}"
+              echo "==> Authenticating with docker registry..." >&2
+              echo "${REGISTRY_TOKEN}" | docker login -u "${REGISTRY_USER}" --password-stdin docker.cnb.cool >&2 || {
+                echo "==> ERROR: Failed to authenticate with docker registry" >&2
+                exit 1
+              }
+              
+              # Pull and verify image
+              echo "==> Pulling image: ${IMAGE}" >&2
+              docker pull "${IMAGE}" >&2 || {
+                echo "==> ERROR: Failed to pull image ${IMAGE}" >&2
+                exit 1
+              }
+              
+              # Extract and verify version from image OCI label
+              echo "==> Verifying version from image metadata..." >&2
+              INSPECT_JSON=$(docker inspect "${IMAGE}" 2>/dev/null) || {
+                echo "==> ERROR: Failed to inspect image ${IMAGE}" >&2
+                exit 1
+              }
+              
+              # Extract version from OCI label: look for org.opencontainers.image.version: "v1.2.3"
+              IMAGE_VERSION=$(echo "${INSPECT_JSON}" | jq -r '.[0].Config.Labels["org.opencontainers.image.version"] // empty')
+              
+              if [ -z "${IMAGE_VERSION}" ]; then
+                echo "==> ERROR: Image version label not found" >&2
+                echo "==> Image must be built with: --label org.opencontainers.image.version=<VERSION>" >&2
+                exit 1
+              fi
+              
+              if [ "${IMAGE_VERSION}" != "${VERSION}" ]; then
+                echo "==> ERROR: Version mismatch!" >&2
+                echo "    Expected: ${VERSION}" >&2
+                echo "    Got from image: ${IMAGE_VERSION}" >&2
+                exit 1
+              fi
+              
+              echo "==> ✓ Version verified: ${IMAGE_VERSION}" >&2
               
               # ============================================================
               # Deploy Single Container (Backend + Caddy + Frontend)

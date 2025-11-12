@@ -21,6 +21,10 @@ RUN npm prune --production
 # Stage 2: Runtime
 FROM node:20-alpine
 
+# Accept VERSION as build argument (passed from CI/CD)
+# Defaults to 'dev' if not specified
+ARG VERSION=dev
+
 # Install runtime dependencies:
 # - Chromium for Puppeteer (browser mode)
 # - Caddy for reverse proxy + static file serving
@@ -41,6 +45,10 @@ RUN apk add --no-cache \
 # Tell Puppeteer to use installed Chromium
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+
+# Set APP_VERSION environment variable from build arg
+# This can be read by the application at runtime
+ENV APP_VERSION=${VERSION}
 
 # Create non-root user
 RUN addgroup -g 1001 -S nodejs && \
