@@ -18,6 +18,29 @@ const PreviewState = {
 };
 
 //=============================================================================
+// Toast State (管理timeout避免堆积)
+//=============================================================================
+
+const ToastState = {
+  mainTimeout: null,      // 主界面Toast timeout
+  previewTimeout: null,   // 预览模式Toast timeout
+  
+  clearMain() {
+    if (this.mainTimeout) {
+      clearTimeout(this.mainTimeout);
+      this.mainTimeout = null;
+    }
+  },
+  
+  clearPreview() {
+    if (this.previewTimeout) {
+      clearTimeout(this.previewTimeout);
+      this.previewTimeout = null;
+    }
+  }
+};
+
+//=============================================================================
 // Configuration Module (引用外部AppConfig)
 //=============================================================================
 
@@ -356,23 +379,92 @@ function updateProgressWithUrl(completed, total, currentUrl) {
 
 /**
  * 显示错误消息（XSS安全）
+ * @param {string} message - 错误消息
+ * @param {boolean} autoDismiss - 是否自动消失
  */
-function showError(message) {
-  UIElements.errorDiv.textContent = '';
-  UIElements.errorDiv.appendChild(createIcon('icon-warning'));
-  UIElements.errorDiv.appendChild(document.createTextNode(` ${message}`));
-  UIElements.errorDiv.classList.add('show');
-  UIElements.errorDiv.classList.remove('info');
+function showError(message, autoDismiss = false) {
+  // 检查预览模式是否打开
+  const previewMode = document.getElementById('previewMode');
+  const isPreviewOpen = previewMode && previewMode.style.display === 'flex';
+  
+  if (isPreviewOpen) {
+    // 使用预览模式专用Toast
+    showPreviewToast(message, 'error', autoDismiss);
+  } else {
+    // 清理旧的timeout,避免堆积
+    ToastState.clearMain();
+    
+    // 使用主界面Toast (errorDiv)
+    UIElements.errorDiv.textContent = '';
+    UIElements.errorDiv.appendChild(createIcon('icon-warning'));
+    UIElements.errorDiv.appendChild(document.createTextNode(` ${message}`));
+    UIElements.errorDiv.classList.add('show');
+    UIElements.errorDiv.classList.remove('info');
+    
+    if (autoDismiss) {
+      ToastState.mainTimeout = setTimeout(() => {
+        UIElements.errorDiv.classList.remove('show');
+        ToastState.mainTimeout = null;
+      }, 3000);
+    }
+  }
 }
 
 /**
  * 显示成功消息（XSS安全）
+ * @param {string} message - 成功消息
+ * @param {boolean} autoDismiss - 是否自动消失
  */
-function showSuccess(message) {
-  UIElements.errorDiv.textContent = '';
-  UIElements.errorDiv.appendChild(createIcon('icon-checkmark'));
-  UIElements.errorDiv.appendChild(document.createTextNode(` ${message}`));
-  UIElements.errorDiv.classList.add('show', 'info');
+function showSuccess(message, autoDismiss = true) {
+  // 检查预览模式是否打开
+  const previewMode = document.getElementById('previewMode');
+  const isPreviewOpen = previewMode && previewMode.style.display === 'flex';
+  
+  if (isPreviewOpen) {
+    // 使用预览模式专用Toast
+    showPreviewToast(message, 'success', autoDismiss);
+  } else {
+    // 清理旧的timeout,避免堆积
+    ToastState.clearMain();
+    
+    // 使用主界面Toast (errorDiv)
+    UIElements.errorDiv.textContent = '';
+    UIElements.errorDiv.appendChild(createIcon('icon-checkmark'));
+    UIElements.errorDiv.appendChild(document.createTextNode(` ${message}`));
+    UIElements.errorDiv.classList.add('show', 'info');
+    
+    if (autoDismiss) {
+      ToastState.mainTimeout = setTimeout(() => {
+        UIElements.errorDiv.classList.remove('show', 'info');
+        ToastState.mainTimeout = null;
+      }, 3000);
+    }
+  }
+}
+
+/**
+ * 在预览模式中显示Toast
+ * @param {string} message - 消息内容
+ * @param {string} type - 'error' | 'success'
+ * @param {boolean} autoDismiss - 是否自动消失
+ */
+function showPreviewToast(message, type, autoDismiss) {
+  const toast = document.getElementById('previewToast');
+  if (!toast) return;
+  
+  // 清理旧的timeout,避免堆积
+  ToastState.clearPreview();
+  
+  // XSS安全: 使用textContent
+  toast.textContent = message;
+  toast.className = `preview-toast show ${type}`;
+  
+  if (autoDismiss) {
+    ToastState.previewTimeout = setTimeout(() => {
+      toast.classList.remove('show');
+      ToastState.previewTimeout = null;
+    }, 3000);
+  }
 }
 
 /**
@@ -565,16 +657,12 @@ async function handleSingleScrape(url) {
   try {
     const data = await scrapeURL(url);
     
-    // 显示结果
-    UIElements.markdownTextarea.value = data.markdown || '';
-    UIElements.resultDiv.classList.add('show');
-    
-    // 平滑滚动到结果
-    const scrollTimeoutId = setTimeout(() => {
-      UIElements.resultDiv.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      BatchProcessor.removeTimeout(scrollTimeoutId);
-    }, 100);
-    BatchProcessor.addTimeout(scrollTimeoutId);
+    // 使用统一预览模式展示结果
+    showPreview({
+      title: data.title || '预览',
+      url: url,
+      markdown: data.markdown || ''
+    }, false); // isBatch = false
     
   } catch (error) {
     showError(error.message);
@@ -688,23 +776,17 @@ async function handleCrawl(url) {
       throw new Error(finalResult.error || '爬取失败');
     }
     
-    // 根据显示模式展示结果
-    const displayMode = UIElements.displayModeSelect.value;
-    if (displayMode === 'merged') {
-      displayMergedCrawlResults(finalResult);
-    } else {
-      displayPaginatedCrawlResults(finalResult);
-    }
+    // 使用统一预览模式展示结果
+    showPreview({
+      pages: finalResult.pages.map(p => ({
+        title: p.title || '页面',
+        url: p.url,
+        markdown: p.markdown || ''
+      }))
+    }, true); // isBatch = true
     
     // 显示成功消息
     showSuccess(`爬取完成：共 ${finalResult.totalPages} 页`);
-    
-    // 平滑滚动到结果
-    const scrollTimeoutId = setTimeout(() => {
-      UIElements.resultDiv.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      BatchProcessor.removeTimeout(scrollTimeoutId);
-    }, 100);
-    BatchProcessor.addTimeout(scrollTimeoutId);
     
   } catch (error) {
     clearTimeout(timeoutId);
@@ -1158,16 +1240,56 @@ function closePreview() {
  * 复制当前页（占位函数）
  */
 function copyCurrentPage() {
-  // TODO: Phase 4 - 实现复制逻辑
-  console.log('Copy current page');
+  if (!PreviewState.pages || PreviewState.pages.length === 0) {
+    showError('没有可复制的内容');
+    return;
+  }
+  
+  const page = PreviewState.pages[PreviewState.currentPageIndex];
+  const markdown = page.markdown || '';
+  
+  navigator.clipboard.writeText(markdown)
+    .then(() => {
+      showSuccess('已复制到剪贴板'); // autoDismiss默认为true
+    })
+    .catch((error) => {
+      showError('复制失败: ' + error.message, true); // 错误也自动消失
+    });
 }
 
 /**
- * 导出当前页（占位函数）
+ * 导出当前页
  */
 function exportCurrentPage() {
-  // TODO: Phase 4 - 实现导出逻辑
-  console.log('Export current page');
+  if (!PreviewState.pages || PreviewState.pages.length === 0) {
+    showError('没有可导出的内容', true);
+    return;
+  }
+  
+  const page = PreviewState.pages[PreviewState.currentPageIndex];
+  const markdown = page.markdown || '';
+  const title = page.title || '预览';
+  
+  // 清理文件名（移除非法字符）
+  const sanitizedFilename = title
+    .replace(/[<>:"/\\|?*\x00-\x1F]/g, '') // 移除文件系统非法字符
+    .replace(/\s+/g, '-')                   // 空格转为连字符
+    .trim()                                  // 移除首尾空白
+    .substring(0, 100)                       // 限制长度
+    .replace(/^-+|-+$/g, '');                // 移除首尾连字符
+  
+  const filename = sanitizedFilename || 'export';
+  
+  // 创建Blob并下载
+  const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${filename}.md`;
+  a.click();
+  URL.revokeObjectURL(url);
+  
+  showSuccess('已导出文件');
 }
 
 /**

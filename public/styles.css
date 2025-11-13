@@ -973,6 +973,43 @@ textarea:focus {
   contain: layout style paint;
 }
 
+/* Preview Toast (dedicated for preview mode) */
+.preview-toast {
+  position: fixed;
+  top: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 12px 20px;
+  background: rgba(0, 0, 0, 0.85);
+  color: white;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 500;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  z-index: 10000;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.3s ease, visibility 0.3s ease, transform 0.3s ease;
+  max-width: 320px;
+  text-align: center;
+}
+
+.preview-toast.show {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(10px);
+}
+
+.preview-toast.error {
+  background: rgba(255, 59, 48, 0.95);
+}
+
+.preview-toast.success {
+  background: rgba(52, 199, 89, 0.95);
+}
+
 .progress-dot.active {
   width: 20px;
   border-radius: 3px;
