@@ -17,6 +17,9 @@ Thumbs.db
 .env.local
 .env.production
 
+# MCP configuration with secrets
+.mcp.json
+
 # Test output
 tests/output/
 

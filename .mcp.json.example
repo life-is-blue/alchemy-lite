@@ -11,8 +11,12 @@
     },
     "context7": {
       "type": "sse",
-      "url": "https://mcp-api.tencent-cloud.com/sse/c5153b6468cba2f4",
+      "url": "https://mcp-api.tencent-cloud.com/sse/YOUR_SSE_ID",
       "description": "Context7 腾讯云 MCP 服务"
+    },
+    "figma": {
+      "command": "npx",
+      "args": ["@thirdstrandstudio/mcp-figma", "--figma-token", "YOUR_FIGMA_TOKEN"]
     }
   }
 }
