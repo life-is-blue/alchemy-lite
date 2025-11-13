@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "chrome-devtools": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "chrome-devtools-mcp@latest"
+      ],
+      "description": "Chrome DevTools MCP - 用于浏览器自动化和调试"
+    },
+    "context7": {
+      "type": "sse",
+      "url": "https://mcp-api.tencent-cloud.com/sse/c5153b6468cba2f4",
+      "description": "Context7 腾讯云 MCP 服务"
+    }
+  }
+}

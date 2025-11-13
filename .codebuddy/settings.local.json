@@ -1,0 +1,7 @@
+{
+  "enabledMcpjsonServers": [
+    "chrome-devtools",
+    "context7"
+  ],
+  "disabledMcpjsonServers": []
+}
