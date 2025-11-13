@@ -1137,6 +1137,15 @@ function updatePagePosition() {
   
   updateToolbar();
   updateProgressIndicator();
+  
+  // 更新提纯按钮显示状态 (动态显示/隐藏)
+  const purifyBtn = document.getElementById('purifyBtn');
+  const currentPage = PreviewState.pages[PreviewState.currentPageIndex];
+  if (currentPage && detectNoisePatterns(currentPage.markdown)) {
+    purifyBtn.style.display = 'inline-flex';
+  } else {
+    purifyBtn.style.display = 'none';
+  }
 }
 
 /**
@@ -1201,6 +1210,198 @@ function updateProgressIndicator() {
   });
 }
 
+//=============================================================================
+// AI Purify Functions
+//=============================================================================
+
+/**
+ * 检测Markdown内容是否包含噪音模式
+ * @param {string} markdown - Markdown内容
+ * @returns {boolean} - 是否检测到噪音
+ */
+function detectNoisePatterns(markdown) {
+  if (!markdown) return false;
+  
+  const patterns = [
+    /## Related Articles/i,
+    /Subscribe to.*newsletter/i,
+    /© \d{4}/,  // 版权声明
+    /Follow us on/i,
+    /Share this article/i,
+    /Comments/i,
+  ];
+  
+  // 超长内容也可能有噪音
+  if (markdown.split('\n').length > 200) {
+    return true;
+  }
+  
+  // 检测是否匹配噪音模式
+  return patterns.some(pattern => pattern.test(markdown));
+}
+
+/**
+ * 统计Markdown中的标题数量
+ * @param {string} markdown - Markdown内容
+ * @returns {number} - 标题数量
+ */
+function countHeadings(markdown) {
+  const headingPattern = /^#{1,6}\s+.+$/gm;
+  const matches = markdown.match(headingPattern);
+  return matches ? matches.length : 0;
+}
+
+/**
+ * 验证提纯后的内容质量
+ * @param {string} original - 原始Markdown
+ * @param {string} purified - 提纯后Markdown
+ * @returns {boolean} - 是否通过质量验证
+ */
+function validatePurifiedContent(original, purified) {
+  if (!purified || purified.trim().length === 0) {
+    return false;
+  }
+  
+  return (
+    purified.length > original.length * 0.7 && // 不能丢失超过30%
+    countHeadings(purified) >= countHeadings(original) && // 保留所有标题
+    /#{1,6}\s+/.test(purified) // 保持结构
+  );
+}
+
+/**
+ * 处理AI提纯请求
+ * Note: 需要后端实现 POST /api/purify 端点
+ * 接口规约: { content: string } -> { purified: string }
+ */
+async function handlePurify() {
+  const btn = document.getElementById('purifyBtn');
+  const pageIndex = PreviewState.currentPageIndex;
+  const page = PreviewState.pages[pageIndex];
+  
+  if (!page) return;
+  
+  const originalMarkdown = page.markdown;
+  
+  // 检查缓存 - 立即应用(显示完成状态,不重复Loading)
+  if (PreviewState.purifiedVersions.has(pageIndex)) {
+    applyPurifiedVersion(pageIndex);
+    return;
+  }
+  
+  // Loading状态
+  btn.innerHTML = '正在提纯...';
+  btn.disabled = true;
+  btn.classList.add('loading');
+  
+  try {
+    const response = await fetch('/api/purify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: originalMarkdown }),
+      signal: AbortSignal.timeout(3000) // 3秒超时
+    });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    
+    const { purified } = await response.json();
+    
+    // 质量验证
+    if (validatePurifiedContent(originalMarkdown, purified)) {
+      PreviewState.purifiedVersions.set(pageIndex, purified);
+      applyPurifiedVersion(pageIndex);
+    } else {
+      showError('提纯效果不理想，已保留原版', true);
+      btn.innerHTML = '✨ 提纯';
+      btn.disabled = false;
+      btn.classList.remove('loading');
+    }
+  } catch (error) {
+    // API不可用时的优雅降级
+    let message = '提纯服务暂时不可用';
+    if (error.name === 'AbortError') {
+      message = '提纯服务超时，请稍后重试';
+    } else if (error instanceof TypeError) {
+      message = '网络连接失败';
+    }
+    
+    showError(message, true);
+    btn.innerHTML = '✨ 提纯';
+    btn.disabled = false;
+    btn.classList.remove('loading');
+  }
+}
+
+/**
+ * 应用提纯后的版本
+ * @param {number} pageIndex - 页面索引
+ */
+function applyPurifiedVersion(pageIndex) {
+  const wrappers = document.querySelectorAll('.page-wrapper');
+  const wrapper = wrappers[pageIndex];
+  const purified = PreviewState.purifiedVersions.get(pageIndex);
+  
+  if (!wrapper || !purified) return;
+  
+  // 清理旧的pending timeout,防止动画中断问题
+  if (wrapper.dataset.purifyTimeout) {
+    clearTimeout(parseInt(wrapper.dataset.purifyTimeout));
+    delete wrapper.dataset.purifyTimeout;
+  }
+  
+  // 添加溶解动画
+  wrapper.classList.add('dissolving');
+  
+  const timeoutId = setTimeout(() => {
+    // 验证wrapper仍为当前页(防止页面切换导致更新错误页)
+    if (PreviewState.currentPageIndex !== pageIndex) return;
+    
+    // 更新内容
+    const rawHtml = marked.parse(purified);
+    wrapper.querySelector('.page-inner').innerHTML = DOMPurify.sanitize(rawHtml);
+    
+    // 移除溶解动画,添加高亮动画
+    wrapper.classList.remove('dissolving');
+    wrapper.classList.add('purified');
+    
+    // 更新按钮状态
+    const btn = document.getElementById('purifyBtn');
+    btn.innerHTML = '✓ 已提纯';
+    
+    delete wrapper.dataset.purifyTimeout;
+  }, 300);
+  
+  // 追踪timeout便于后续清理
+  wrapper.dataset.purifyTimeout = timeoutId;
+}
+
+/**
+ * 一键还原/提纯切换
+ */
+function handlePurifyToggle() {
+  const pageIndex = PreviewState.currentPageIndex;
+  const wrappers = document.querySelectorAll('.page-wrapper');
+  const wrapper = wrappers[pageIndex];
+  
+  if (!wrapper) return;
+  
+  if (wrapper.classList.contains('purified')) {
+    // 还原原版
+    const page = PreviewState.pages[pageIndex];
+    const rawHtml = marked.parse(page.markdown);
+    wrapper.querySelector('.page-inner').innerHTML = DOMPurify.sanitize(rawHtml);
+    wrapper.classList.remove('purified');
+    
+    const btn = document.getElementById('purifyBtn');
+    btn.innerHTML = '🔍 提纯';
+  } else {
+    // 应用提纯版
+    handlePurify();
+  }
+}
+
 /**
  * 显示预览模式（统一入口）
  */
@@ -1221,6 +1422,16 @@ function showPreview(data, isBatch) {
   // 绑定手势事件（批量模式）- 先解绑再绑定
   unbindGestureEvents();
   bindGestureEvents();
+  
+  // 智能显示提纯按钮 (检测当前页)
+  const purifyBtn = document.getElementById('purifyBtn');
+  const currentPage = PreviewState.pages[PreviewState.currentPageIndex];
+  if (currentPage && detectNoisePatterns(currentPage.markdown)) {
+    purifyBtn.style.display = 'inline-flex';
+    purifyBtn.innerHTML = '🔍 提纯'; // 重置按钮文本
+  } else {
+    purifyBtn.style.display = 'none';
+  }
   
   // 显示预览容器
   document.getElementById('previewMode').style.display = 'flex';

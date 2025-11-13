@@ -1016,3 +1016,24 @@ textarea:focus {
   background: var(--color-primary);
 }
 
+/* AI Purify Animations */
+@keyframes dissolve {
+  to {
+    opacity: 0;
+    transform: translateY(10px) scale(0.95);
+  }
+}
+
+.dissolving .page-inner {
+  animation: dissolve 0.3s ease-out forwards;
+}
+
+@keyframes highlight {
+  0%, 100% { background: transparent; }
+  50% { background: rgba(52, 199, 89, 0.1); }
+}
+
+.purified .page-inner {
+  animation: highlight 0.4s ease-out;
+}
+
