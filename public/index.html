@@ -128,24 +128,33 @@
   <div id="previewMode" class="preview-container" style="display: none;">
     <!-- Unified Toolbar -->
     <header class="preview-toolbar" role="banner">
-      <button class="close-btn" aria-label="关闭预览">×</button>
+      <button class="close-btn" aria-label="关闭预览">
+        <svg class="icon" width="24" height="24" aria-hidden="true"><use href="/icons.svg#icon-x"></use></svg>
+      </button>
       <h1 class="preview-title" id="pageTitle">加载中...</h1>
       <nav class="toolbar-actions" aria-label="内容操作">
         <button class="action-btn" id="purifyBtn" style="display: none;" aria-label="AI提纯内容">
-          ✨ 提纯
+          <svg class="icon" width="16" height="16" aria-hidden="true"><use href="/icons.svg#icon-sparkles"></use></svg>
+          <span>提纯</span>
         </button>
         <button class="action-btn" data-action="copy" aria-label="复制当前页">
-          📋 复制
+          <svg class="icon" width="16" height="16" aria-hidden="true"><use href="/icons.svg#icon-copy"></use></svg>
+          <span>复制</span>
         </button>
         <button class="action-btn" data-action="export" aria-label="导出当前页">
-          ⬇️ 导出
+          <svg class="icon" width="16" height="16" aria-hidden="true"><use href="/icons.svg#icon-download"></use></svg>
+          <span>导出</span>
         </button>
         
         <!-- Pagination Controls (shown in batch mode) -->
         <div class="pagination" id="pagination" style="display: none;" role="navigation" aria-label="页面导航">
-          <button class="page-btn" id="prevBtn" disabled aria-label="上一页">‹</button>
+          <button class="page-btn" id="prevBtn" disabled aria-label="上一页">
+            <svg class="icon" width="16" height="16" aria-hidden="true"><use href="/icons.svg#icon-arrow-left"></use></svg>
+          </button>
           <span class="page-indicator" id="pageIndicator" aria-live="off" aria-atomic="true">1 / 1</span>
-          <button class="page-btn" id="nextBtn" disabled aria-label="下一页">›</button>
+          <button class="page-btn" id="nextBtn" disabled aria-label="下一页">
+            <svg class="icon" width="16" height="16" aria-hidden="true"><use href="/icons.svg#icon-arrow-right"></use></svg>
+          </button>
         </div>
       </nav>
       <button class="done-btn" aria-label="完成阅读">完成</button>

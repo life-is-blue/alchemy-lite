@@ -96,7 +96,7 @@ body {
   line-height: 1.381;
   font-weight: 400;
   letter-spacing: 0.011em;
-  color: #515154;
+  color: var(--color-text-secondary);
   max-width: 640px;
   margin: 0 auto;
 }
@@ -134,7 +134,7 @@ input[type="text"],
 textarea#url {
   width: 100%;
   padding: 14px 16px;
-  font-size: 17px;
+  font-size: 16px;
   line-height: 1.23536;
   font-family: inherit;
   color: var(--color-text-primary);
@@ -191,7 +191,7 @@ input[type="checkbox"] {
 
 .checkbox-wrapper label {
   margin: 0;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 400;
   color: var(--color-text-primary);
   cursor: pointer;
@@ -204,7 +204,7 @@ input[type="checkbox"] {
   padding: 14px 32px;
   background: var(--color-primary);
   color: var(--color-background);
-  font-size: 17px;
+  font-size: 16px;
   line-height: 1.17648;
   font-weight: 400;
   font-family: inherit;
@@ -605,16 +605,48 @@ textarea:focus {
   border-bottom: 1px solid var(--color-border-light);
 }
 
+/* Typography Scale - Apple HIG Standard */
+/* 
+  Font Size System:
+  - 48px: Hero Title (Large Title)
+  - 32px: Section Title (Title 1) - Reader Mode
+  - 24px: Subsection Title (Title 2) - Reader Mode
+  - 21px: Hero Subtitle (Title 3)
+  - 18px: Body Text - Reader Mode
+  - 17px: Headline/Body
+  - 16px: Primary Button/Input (Callout)
+  - 15px: Secondary Button/Tool Button (Subhead)
+  - 14px: Label/Checkbox/Caption/Page Indicator
+  - 13px: Footer/Small Text (Footnote)
+  - 12px: Micro Text (Caption)
+*/
+
+/* Icon utility class */
+.icon {
+  display: inline-block;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+
+.action-btn .icon,
+.page-btn .icon,
+.close-btn .icon {
+  pointer-events: none;
+}
+
 .close-btn {
-  font-size: 32px;
+  font-size: 24px;
   color: var(--color-primary);
   background: none;
   border: none;
   cursor: pointer;
-  width: 32px;
-  height: 32px;
+  width: 44px;
+  height: 44px;
   padding: 0;
   line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .close-btn:hover {
@@ -623,7 +655,7 @@ textarea:focus {
 
 .preview-title {
   flex: 1;
-  font-size: 17px;
+  font-size: 16px;
   font-weight: 600;
   text-align: center;
   white-space: nowrap;
@@ -639,14 +671,18 @@ textarea:focus {
 }
 
 .action-btn {
-  padding: 6px 12px;
-  font-size: 14px;
+  padding: 10px 16px;
+  font-size: 15px;
   color: var(--color-primary);
   background: none;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   cursor: pointer;
   transition: all var(--transition-fast);
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .action-btn:hover {
@@ -665,15 +701,18 @@ textarea:focus {
 }
 
 .page-btn {
-  width: 24px;
-  height: 24px;
+  width: 44px;
+  height: 44px;
   padding: 0;
-  font-size: 18px;
+  font-size: 20px;
   color: var(--color-primary);
   background: none;
   border: none;
   cursor: pointer;
   line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .page-btn:disabled {
@@ -691,8 +730,8 @@ textarea:focus {
 }
 
 .done-btn {
-  padding: 6px 16px;
-  font-size: 14px;
+  padding: 10px 20px;
+  font-size: 15px;
   font-weight: 600;
   color: white;
   background: var(--color-primary);
@@ -700,6 +739,7 @@ textarea:focus {
   border-radius: var(--radius-sm);
   cursor: pointer;
   transition: background var(--transition-fast);
+  min-height: 44px;
 }
 
 .done-btn:hover {
