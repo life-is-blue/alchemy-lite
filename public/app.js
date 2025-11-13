@@ -228,8 +228,17 @@ function extractPathPrefix(url) {
       return path;
     }
     
-    // 规则3: 否则视为目录，添加/
-    return path + '/';
+    // 规则3: 提取父目录路径
+    // - /docs/api/chat -> /docs/api/ (多级路径)
+    // - /docs -> / (一级路径)
+    // - / -> / (根路径)
+    const lastSlashIndex = path.lastIndexOf('/');
+    if (lastSlashIndex >= 0) {
+      return path.substring(0, lastSlashIndex + 1);
+    }
+    
+    // 兜底: 根目录（理论上不会到这里）
+    return '/';
     
   } catch (error) {
     throw new Error('Invalid URL for crawl prefix extraction');
