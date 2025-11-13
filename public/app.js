@@ -1,4 +1,21 @@
 //=============================================================================
+// Preview Mode State
+//=============================================================================
+
+const PreviewState = {
+  currentPageIndex: 0,
+  pages: [],
+  purifiedVersions: new Map(),
+  initialized: false,
+  
+  reset() {
+    this.currentPageIndex = 0;
+    this.pages = [];
+    this.purifiedVersions.clear();
+  }
+};
+
+//=============================================================================
 // Configuration Module (引用外部AppConfig)
 //=============================================================================
 
@@ -951,6 +968,105 @@ function initApp() {
 function destroyApp() {
   BatchProcessor.destroy();
   console.log('Firecrawl Lite cleaned up');
+}
+
+//=============================================================================
+// Preview Mode Logic (Safari-style Unified Reader)
+//=============================================================================
+
+/**
+ * 初始化预览模式事件监听器（仅执行一次）
+ */
+function initPreviewListeners() {
+  if (PreviewState.initialized) return;
+  
+  const closeBtn = document.querySelector('#previewMode .close-btn');
+  const doneBtn = document.querySelector('#previewMode .done-btn');
+  const purifyBtn = document.getElementById('purifyBtn');
+  const copyBtn = document.querySelector('#previewMode [data-action="copy"]');
+  const exportBtn = document.querySelector('#previewMode [data-action="export"]');
+  const prevBtn = document.getElementById('prevBtn');
+  const nextBtn = document.getElementById('nextBtn');
+  
+  if (closeBtn) BatchProcessor.addEventListener(closeBtn, 'click', closePreview);
+  if (doneBtn) BatchProcessor.addEventListener(doneBtn, 'click', closePreview);
+  if (purifyBtn) BatchProcessor.addEventListener(purifyBtn, 'click', handlePurifyToggle);
+  if (copyBtn) BatchProcessor.addEventListener(copyBtn, 'click', copyCurrentPage);
+  if (exportBtn) BatchProcessor.addEventListener(exportBtn, 'click', exportCurrentPage);
+  if (prevBtn) BatchProcessor.addEventListener(prevBtn, 'click', prevPage);
+  if (nextBtn) BatchProcessor.addEventListener(nextBtn, 'click', nextPage);
+  
+  PreviewState.initialized = true;
+}
+
+/**
+ * 显示预览模式（统一入口）
+ */
+function showPreview(data, isBatch) {
+  // 统一数据格式: 单页包装成数组
+  PreviewState.pages = isBatch ? data.pages : [{
+    title: data.title || '预览',
+    url: data.url,
+    markdown: data.markdown
+  }];
+  
+  // 绑定事件监听器（仅首次初始化）
+  initPreviewListeners();
+  
+  // 显示预览容器
+  document.getElementById('previewMode').style.display = 'flex';
+  
+  // TODO: Phase 2 - 实现渲染逻辑
+}
+
+/**
+ * 关闭预览模式
+ */
+function closePreview() {
+  document.getElementById('previewMode').style.display = 'none';
+  
+  // 重置状态
+  PreviewState.reset();
+}
+
+/**
+ * 复制当前页（占位函数）
+ */
+function copyCurrentPage() {
+  // TODO: Phase 4 - 实现复制逻辑
+  console.log('Copy current page');
+}
+
+/**
+ * 导出当前页（占位函数）
+ */
+function exportCurrentPage() {
+  // TODO: Phase 4 - 实现导出逻辑
+  console.log('Export current page');
+}
+
+/**
+ * 上一页（占位函数）
+ */
+function prevPage() {
+  // TODO: Phase 3 - 实现翻页逻辑
+  console.log('Previous page');
+}
+
+/**
+ * 下一页（占位函数）
+ */
+function nextPage() {
+  // TODO: Phase 3 - 实现翻页逻辑
+  console.log('Next page');
+}
+
+/**
+ * AI提纯切换（占位函数）
+ */
+function handlePurifyToggle() {
+  // TODO: Phase 5 - 实现AI提纯逻辑
+  console.log('Purify toggle');
 }
 
 // 页面加载时初始化

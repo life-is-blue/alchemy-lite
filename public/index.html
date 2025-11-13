@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Firecrawl Lite - 网页抓取工具</title>
   <link rel="stylesheet" href="/styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/marked@11.0.0/marked.min.js" 
+          integrity="sha384-4Tu0AVV0VM7dUwfPXGZDt6OI+2sNBSrQZe1Gmz87gzoio1n3IeHCMwRrfqSi4/Oh" 
+          crossorigin="anonymous"></script>
 </head>
 <body>
   <!-- SVG Icon Sprite -->
@@ -115,6 +118,49 @@
       <a id="githubLink" href="https://github.com" target="_blank">GitHub</a> · 
       <a id="healthCheckLink" href="/api/health" target="_blank">服务状态</a> · 
       <span id="tagline">简约而不简单</span>
+    </div>
+  </div>
+
+  <!-- Preview Mode (Safari-style Unified Reader) -->
+  <div id="previewMode" class="preview-container" style="display: none;">
+    <!-- Unified Toolbar -->
+    <header class="preview-toolbar" role="banner">
+      <button class="close-btn" aria-label="关闭预览">×</button>
+      <h1 class="preview-title" id="pageTitle">加载中...</h1>
+      <nav class="toolbar-actions" aria-label="内容操作">
+        <button class="action-btn" id="purifyBtn" style="display: none;" aria-label="AI提纯内容">
+          ✨ 提纯
+        </button>
+        <button class="action-btn" data-action="copy" aria-label="复制当前页">
+          📋 复制
+        </button>
+        <button class="action-btn" data-action="export" aria-label="导出当前页">
+          ⬇️ 导出
+        </button>
+        
+        <!-- Pagination Controls (shown in batch mode) -->
+        <div class="pagination" id="pagination" style="display: none;" role="navigation" aria-label="页面导航">
+          <button class="page-btn" id="prevBtn" disabled aria-label="上一页">‹</button>
+          <span class="page-indicator" id="pageIndicator" aria-live="off" aria-atomic="true">1 / 1</span>
+          <button class="page-btn" id="nextBtn" disabled aria-label="下一页">›</button>
+        </div>
+      </nav>
+      <button class="done-btn" aria-label="完成阅读">完成</button>
+    </header>
+    
+    <!-- Content Area (multi-page support) -->
+    <div class="preview-content" id="previewContent">
+      <!-- .page-wrapper elements will be dynamically generated -->
+    </div>
+    
+    <!-- Progress Indicator (shown in batch mode) -->
+    <div class="progress-indicator" 
+         id="progressIndicator" 
+         role="status" 
+         aria-label="阅读进度" 
+         aria-live="off"
+         style="display: none;">
+      <!-- .progress-dot elements will be dynamically generated -->
     </div>
   </div>
 
