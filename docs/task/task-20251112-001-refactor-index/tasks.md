@@ -97,62 +97,56 @@
 
 ---
 
-## Phase 3: 翻页交互 ⏳ NOT STARTED
+## Phase 3: 翻页交互 ✅ COMPLETED
 
 **目标**: 实现左右翻页、手势支持、进度指示
 
-- [ ] **Task 3.1**: 翻页逻辑
-  - 文件: `public/app.js`
-  - 函数: `changePage(newIndex)`, `prevPage()`, `nextPage()`
-  - ✅ **Acceptance**:
-    - 点击翻页按钮 → 平滑切换页面
-    - 第一页禁用上一页按钮
-    - 最后一页禁用下一页按钮
-    - 动画时长300ms
+- [x] **Task 3.1**: 翻页逻辑
+  - 文件: Phase 2已实现 (`prevPage()`, `nextPage()`)
+  - ✅ **Acceptance**: 所有验收标准通过
 
-- [ ] **Task 3.2**: 翻页动画样式
-  - 文件: `public/style.css`
-  - 添加: `.page-wrapper` transition
-  - ✅ **Acceptance**:
-    - 使用transform（GPU加速）
-    - 曲线`cubic-bezier(0.4, 0, 0.2, 1)`
-    - 流畅60fps
+- [x] **Task 3.2**: 翻页动画样式
+  - 文件: Phase 2已实现 (`styles.css:.page-wrapper transition`)
+  - ✅ **Acceptance**: GPU加速, cubic-bezier曲线
 
-- [ ] **Task 3.3**: 手势支持（移动端）
-  - 文件: `public/app.js`
-  - 函数: `handleTouchStart/Move/End`
+- [x] **Task 3.3**: 手势支持（移动端）
+  - 文件: `public/app.js:1234-1306`
+  - 函数: `handleTouchStart/Move/End`, `bindGestureEvents()`, `unbindGestureEvents()`
+  - 修复: 角度计算(60°-120°垂直), 响应式阈值(20%屏幕宽度), passive事件优化
   - ✅ **Acceptance**:
     - 左滑动 → 下一页
     - 右滑动 → 上一页
-    - 阈值75px（防止误触）
+    - 响应式阈值(50-150px，防止大屏误触)
     - 单页模式禁用手势
+    - 无内存泄漏(手动管理监听器)
 
-- [ ] **Task 3.4**: 键盘导航
-  - 文件: `public/app.js`
-  - 函数: `handleKeyDown(e)`
+- [x] **Task 3.4**: 键盘导航
+  - 文件: `public/app.js:1201-1232`
+  - 函数: `handlePreviewKeyDown(e)`
   - ✅ **Acceptance**:
     - ← 方向键 → 上一页
     - → 方向键 → 下一页
     - ESC键 → 关闭预览
     - 单页模式禁用翻页键
 
-- [ ] **Task 3.5**: 进度指示器
-  - 文件: `public/app.js`
-  - 函数: `updateProgressIndicator()`
-  - ✅ **Acceptance**:
-    - 底部显示圆点指示器
-    - 当前页圆点变长并高亮
-    - 单页模式隐藏指示器
-    - 动画过渡流畅
+- [x] **Task 3.5**: 进度指示器
+  - 文件: Phase 2已实现 (`updateProgressIndicator()`)
+  - ✅ **Acceptance**: 所有验收标准通过
 
-- [ ] **Task 3.6**: 进度指示器样式
-  - 文件: `public/style.css`
-  - 添加: `.progress-indicator`, `.progress-dot`
-  - ✅ **Acceptance**:
-    - 固定底部20px
-    - 圆点6px，激活时20px宽
-    - 毛玻璃背景
-    - 过渡动画0.3s
+- [x] **Task 3.6**: 进度指示器样式
+  - 文件: Phase 2已实现 (`styles.css:.progress-indicator`)
+  - ✅ **Acceptance**: 所有验收标准通过
+
+**额外交付**:
+- ✅ 修复3个P0问题(passive事件/内存泄漏/垂直滚动判断)
+- ✅ PreviewState.gestureListeners手动管理
+- ✅ unbindGestureEvents防止重复绑定
+- ✅ 角度计算精确判断用户意图
+
+**Commit**: `babaaf8` - feat: add gesture support and keyboard navigation
+
+**设计评审**: REJECTED → APPROVED (修复3个P0问题后)  
+**代码评审**: APPROVED
 
 ---
 
@@ -161,8 +155,7 @@
 **目标**: 响应式适配和细节优化
 
 - [ ] **Task 4.1**: 移动端响应式
-  - 文件: `public/style.css`
-  - 添加: `@media (max-width: 768px)` 媒体查询
+  - 文件: Phase 2已完成部分
   - ✅ **Acceptance**:
     - 移动端工具栏高度52px
     - 内边距从40px → 20px
@@ -345,12 +338,12 @@ code public/index.html public/app.js public/style.css
 ## Progress Tracking
 
 **Total Tasks**: 25 (Phase 1-5 + Tests)  
-**Completed**: 8 (Task 1.1-1.3, Task 2.1-2.5)  
+**Completed**: 14 (Task 1.1-1.3, Task 2.1-2.5, Task 3.1-3.6)  
 **In Progress**: 0  
-**Not Started**: 17
+**Not Started**: 11
 
 **Estimated Time**: 3 hours  
-**Time Spent**: 1.17 hours (Phase 1: 0.5h, Phase 2: 0.67h)
+**Time Spent**: 1.92 hours (Phase 1: 0.5h, Phase 2: 0.67h, Phase 3: 0.75h)
 
 ---
 
