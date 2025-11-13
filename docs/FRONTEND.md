@@ -1,6 +1,8 @@
 # Frontend Integration Guide
 
-When building a frontend that calls Firecrawl Lite, follow these principles.
+Guide for integrating third-party frontends with Firecrawl Lite API.
+
+> **Note**: For the built-in UI documentation, see [public/README.md](../public/README.md)
 
 ---
 

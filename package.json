@@ -11,6 +11,7 @@
     "clean": "rm -rf dist",
     "test": "vitest run tests/unit",
     "test:integration": "vitest run tests/integration",
+    "test:frontend": "node public/tests/preview-mode.test.js",
     "test:all": "vitest run",
     "test:watch": "vitest",
     "prepare": "husky"

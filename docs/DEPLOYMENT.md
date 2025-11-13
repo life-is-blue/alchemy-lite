@@ -2,23 +2,26 @@
 
 ## Local Development
 
-**快速启动（推荐）：**
+**快速启动:**
+
 ```bash
-# 终端 1：启动后端
+# 终端 1:启动后端
 npm run dev
 
-# 终端 2：启动前端
-cd public && python3 -m http.server 8080
+# 终端 2:启动前端
+cd public && python3 -m http.server 8080 --bind 127.0.0.1
 
-# 终端 3：启动反向代理（可选，统一入口）
+# 终端 3:启动反向代理(推荐)
 caddy run --config config/Caddyfile
 ```
 
-**访问地址：**
-- 使用 Caddy：http://localhost:8000（推荐）
-- 直接访问：前端 http://localhost:8080 + 后端 http://localhost:3000
+**访问地址:**
+- 使用 Caddy:http://localhost:8000(推荐)
+- 直接访问:前端 http://localhost:8080 + 后端 http://localhost:3000
 
-**Caddy 配置说明（Caddyfile）：**
+**前端开发详细说明**: 见 [public/README.md](../public/README.md)
+
+**Caddy 配置说明** (`config/Caddyfile`):
 ```caddyfile
 :8000 {
   route /api* { reverse_proxy localhost:3000 }
@@ -26,7 +29,7 @@ caddy run --config config/Caddyfile
 }
 ```
 - 监听 8000 端口
-- `/api/*` 转发到后端，`/*` 转发到前端
+- `/api/*` 转发到后端,`/*` 转发到前端
 - 无需手动配置 CORS
 
 ---
@@ -61,48 +64,41 @@ Docker Container (firecrawl-lite)
 
 ## Deployment Steps
 
-### Step 1: Code Changes (Already Done)
+### Step 1: Architecture Overview
 
-Frontend and backend are configured for separation:
-
-**Frontend:**
-- `public/app.js`: Uses `Config.API_BASE` for API calls
-- `public/config.js`: Health check points to `/api/health`
+Frontend and backend communicate via reverse proxy (Caddy):
 
 **Backend:**
-- Removed `express.static('public')` - Static files served separately
-- API routes use `/api` prefix:
-  - `/health` → `/api/health`
-  - `/scrape` → `/api/scrape`
-  - `/crawl` → `/api/crawl`
+- API routes use `/api` prefix (`/api/health`, `/api/scrape`, `/api/crawl`)
+- Runs on internal port 3000 (not exposed)
+
+**Frontend:**
+- Static files served from `/app/public` in production
+- Uses `Config.API_BASE` for API calls (defaults to `/api`)
+- Development details: [public/README.md](../public/README.md)
 
 ### Step 2: Local Testing
 
-**方案 A：使用 Caddy（推荐）**
+**使用 Caddy 反向代理(推荐):**
+
 ```bash
-# 终端 1：启动后端
+# 终端 1:启动后端
 npm run dev
 
-# 终端 2：启动前端
-cd public && python3 -m http.server 8080
+# 终端 2:启动前端
+cd public && python3 -m http.server 8080 --bind 127.0.0.1
 
-# 终端 3：启动 Caddy 反向代理
-caddy run --config Caddyfile
+# 终端 3:启动 Caddy 反向代理
+caddy run --config config/Caddyfile
 
 # 访问 http://localhost:8000
 # 前端: http://localhost:8000/
 # API: http://localhost:8000/api/health
 ```
 
-**方案 B：分别访问**
-```bash
-npm run dev
-# 后端 http://localhost:3000/api/health
+**前端独立访问模式:**
 
-cd public && python3 -m http.server 8080
-# 前端 http://localhost:8080
-# 需在浏览器 console 设置: window.API_BASE = 'http://localhost:3000/api'
-```
+见 [public/README.md](../public/README.md) 中的"方式A:独立运行"
 
 ### Step 3: Automated Production Deployment
 

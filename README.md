@@ -37,28 +37,33 @@ crawler/
 
 ## Quick Start
 
-**Development (with Caddy reverse proxy):**
+### Backend Development
 
 ```bash
-# Terminal 1: Start backend
 npm install
+npm run dev  # Starts on http://localhost:3000
+```
+
+### Frontend Development
+
+See [public/README.md](public/README.md) for frontend setup and integration.
+
+### Full-stack Development (with Caddy reverse proxy)
+
+```bash
+# Terminal 1: Backend
 npm run dev
 
-# Terminal 2: Start frontend (bind to IPv4)
+# Terminal 2: Frontend
 cd public && python3 -m http.server 8080 --bind 127.0.0.1
 
-# Terminal 3: Start reverse proxy
+# Terminal 3: Reverse Proxy
 caddy run --config config/Caddyfile
 ```
 
 Visit http://localhost:8000
 
-**Don't want Caddy?** Access frontend directly at http://localhost:8080, set in browser console:
-```javascript
-window.API_BASE = 'http://localhost:3000/api';
-```
-
-**Detailed deployment guide**: See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
+**Deployment guide**: See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
 
 ## Testing
 
