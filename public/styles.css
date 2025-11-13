@@ -25,6 +25,28 @@
   --color-error-bg: #fff5f5;
   --color-error-border: #ffc9c9;
   
+  /* Typography Scale - PC端优化 */
+  --font-size-hero: clamp(48px, 5vw, 64px);        /* Hero主标题 (PC端64px) */
+  --font-size-h1: clamp(40px, 4vw, 56px);          /* 页面主标题 */
+  --font-size-h2: clamp(32px, 3vw, 40px);          /* 区块标题 */
+  --font-size-body-large: clamp(16px, 1.5vw, 20px); /* 引导文案 (PC端20px) */
+  --font-size-body: clamp(16px, 1.2vw, 18px);      /* 主正文 (PC端18px) */
+  --font-size-button: 16px;                        /* 按钮文字 */
+  --font-size-label: 15px;                         /* 标签/提示 */
+  --font-size-caption: 13px;                       /* 辅助信息 */
+  
+  /* Font Weights */
+  --font-weight-bold: 700;
+  --font-weight-semibold: 600;
+  --font-weight-medium: 500;
+  --font-weight-regular: 400;
+  
+  /* Letter Spacing */
+  --letter-spacing-tight: -0.02em;
+  --letter-spacing-normal: 0;
+  --letter-spacing-wide: 0.02em;
+  --letter-spacing-wider: 0.15em;  /* 用于英文大写副标题 */
+  
   /* Border Radius */
   --radius-sm: 8px;
   --radius-md: 10px;
@@ -32,14 +54,26 @@
   --radius-xl: 18px;
   
   /* Transitions */
-  --transition-fast: 0.2s ease;
-  --transition-normal: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-fast: 0.15s ease;
+  --transition-normal: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   
   /* Shadows */
   --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.04);
   --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.12);
   --shadow-focus: 0 0 0 4px rgba(0, 113, 227, 0.1);
   --shadow-button: 0 4px 12px rgba(0, 113, 227, 0.25);
+  --shadow-button-hover: 0 8px 20px rgba(0, 113, 227, 0.3);
+  
+  /* Navigation (预留，未来多模块时启用) */
+  --nav-height: 52px;
+  --nav-bg: rgba(255, 255, 255, 0.8);
+  --nav-backdrop: blur(20px);
+  --nav-border: rgba(0, 0, 0, 0.08);
+  --nav-link-color: var(--color-text-primary);
+  --nav-link-hover: var(--color-primary);
+  --nav-z-index: 1000;
 }
 
 body {
@@ -83,19 +117,30 @@ body {
 }
 
 .hero h1 {
-  font-size: 48px;
-  line-height: 1.08349;
-  font-weight: 600;
-  letter-spacing: -0.003em;
+  font-size: var(--font-size-hero);  /* PC端64px, 移动端48px */
+  line-height: 1.08;
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--letter-spacing-tight);
   color: var(--color-text-primary);
-  margin-bottom: 12px;
+  margin-bottom: 16px;
+}
+
+/* 英文副标题 (新增，提升品牌调性) */
+.hero-subtitle-en {
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--letter-spacing-wider);  /* 0.15em */
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  margin-bottom: 24px;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
 }
 
 .hero-subtitle {
-  font-size: 21px;
-  line-height: 1.381;
-  font-weight: 400;
-  letter-spacing: 0.011em;
+  font-size: var(--font-size-body-large);  /* PC端20px, 移动端16px */
+  line-height: 1.4;
+  font-weight: var(--font-weight-regular);
+  letter-spacing: var(--letter-spacing-wide);
   color: var(--color-text-secondary);
   max-width: 640px;
   margin: 0 auto;
@@ -123,25 +168,24 @@ body {
 
 label {
   display: block;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--color-text-primary);
+  font-size: var(--font-size-label);  /* 15px */
+  font-weight: var(--font-weight-semibold);\n  color: var(--color-text-primary);
   margin-bottom: 8px;
-  letter-spacing: -0.016em;
+  letter-spacing: var(--letter-spacing-normal);
 }
 
 input[type="text"],
 textarea#url {
   width: 100%;
   padding: 14px 16px;
-  font-size: 16px;
-  line-height: 1.23536;
+  font-size: var(--font-size-body);  /* PC端18px, 移动端16px */
+  line-height: 1.4;
   font-family: inherit;
   color: var(--color-text-primary);
   background: var(--color-background);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
-  transition: all var(--transition-fast);
+  transition: all var(--transition-normal);
   -webkit-appearance: none;
 }
 
@@ -198,39 +242,43 @@ input[type="checkbox"] {
   letter-spacing: -0.016em;
 }
 
-/* Buttons */
+/* Buttons - PC端大气设计 */
 .button-primary {
   display: inline-block;
-  padding: 14px 32px;
+  padding: 16px 32px;  /* 增加内边距 (14px→16px) */
   background: var(--color-primary);
   color: var(--color-background);
-  font-size: 16px;
-  line-height: 1.17648;
-  font-weight: 400;
+  font-size: var(--font-size-button);
+  line-height: 1.2;
+  font-weight: var(--font-weight-medium);  /* 500，更突出 */
   font-family: inherit;
   text-align: center;
   border: none;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);  /* 10px→12px */
   cursor: pointer;
-  transition: all var(--transition-fast);
+  transition: all var(--transition-normal);  /* 0.2s */
   width: 100%;
   margin-top: 24px;
+  min-height: 52px;  /* 确保最小点击区域 */
+  box-shadow: var(--shadow-sm);  /* 初始微妙阴影 */
 }
 
 .button-primary:hover:not(:disabled) {
   background: var(--color-primary-hover);
-  transform: translateY(-1px);
-  box-shadow: var(--shadow-button);
+  transform: translateY(-2px);  /* 上浮2px (增加了) */
+  box-shadow: var(--shadow-button-hover);  /* 更强阴影 */
 }
 
 .button-primary:active:not(:disabled) {
   transform: translateY(0);
+  box-shadow: var(--shadow-sm);
 }
 
 .button-primary:disabled {
   background: var(--color-border);
   cursor: not-allowed;
   transform: none;
+  box-shadow: none;
 }
 
 .button-secondary {
@@ -1075,5 +1123,48 @@ textarea:focus {
 
 .purified .page-inner {
   animation: highlight 0.4s ease-out;
+}
+
+/* ============================================
+   响应式优化 - 移动端适配
+   ============================================ */
+@media (max-width: 768px) {
+  .hero h1 {
+    font-size: 48px;  /* 移动端固定48px */
+  }
+  
+  .hero-subtitle {
+    font-size: 18px;  /* 移动端略小 */
+  }
+  
+  .hero-subtitle-en {
+    font-size: 12px;
+  }
+  
+  .container {
+    padding: 32px 16px 60px;
+  }
+  
+  .card {
+    padding: 24px;
+  }
+  
+  .button-primary {
+    padding: 14px 24px;  /* 移动端稍小 */
+    min-height: 48px;
+  }
+}
+
+/* ============================================
+   可访问性 - 减弱动态效果
+   ============================================ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
