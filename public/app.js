@@ -1000,6 +1000,119 @@ function initPreviewListeners() {
 }
 
 /**
+ * 渲染所有页面
+ */
+function renderPages(pages) {
+  const container = document.getElementById('previewContent');
+  container.innerHTML = ''; // 清空
+  
+  pages.forEach((page, index) => {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'page-wrapper';
+    wrapper.dataset.index = index;
+    
+    const inner = document.createElement('div');
+    inner.className = 'page-inner';
+    
+    // 使用DOMPurify清理marked.parse的输出,防止XSS攻击
+    const rawHtml = marked.parse(page.markdown);
+    inner.innerHTML = DOMPurify.sanitize(rawHtml);
+    
+    wrapper.appendChild(inner);
+    container.appendChild(wrapper);
+  });
+  
+  // 初始化页面位置
+  PreviewState.currentPageIndex = 0;
+  updatePagePosition();
+}
+
+/**
+ * 更新页面位置（翻页动画）
+ */
+function updatePagePosition() {
+  const wrappers = document.querySelectorAll('.page-wrapper');
+  wrappers.forEach((wrapper, index) => {
+    if (index < PreviewState.currentPageIndex) {
+      wrapper.style.transform = 'translateX(-100%)'; // 已翻过
+      wrapper.style.visibility = 'hidden'; // 优化性能
+    } else if (index > PreviewState.currentPageIndex) {
+      wrapper.style.transform = 'translateX(100%)';  // 未翻到
+      wrapper.style.visibility = 'hidden';
+    } else {
+      wrapper.style.transform = 'translateX(0)';     // 当前页
+      wrapper.style.visibility = 'visible';
+      wrapper.scrollTop = 0; // 重置滚动位置
+    }
+  });
+  
+  updateToolbar();
+  updateProgressIndicator();
+}
+
+/**
+ * 更新工具栏
+ */
+function updateToolbar() {
+  const totalPages = PreviewState.pages.length;
+  const currentIndex = PreviewState.currentPageIndex;
+  
+  // 更新标题
+  const titleEl = document.getElementById('pageTitle');
+  const title = PreviewState.pages[currentIndex]?.title || '预览';
+  titleEl.textContent = title;
+  titleEl.setAttribute('aria-label', `第${currentIndex + 1}页，共${totalPages}页：${title}`);
+  
+  // 翻页控件（批量模式显示）
+  const pagination = document.getElementById('pagination');
+  const prevBtn = document.getElementById('prevBtn');
+  const nextBtn = document.getElementById('nextBtn');
+  
+  if (totalPages > 1) {
+    pagination.style.display = 'flex';
+    
+    const pageIndicator = pagination.querySelector('.page-indicator');
+    pageIndicator.textContent = `${currentIndex + 1} / ${totalPages}`;
+    pageIndicator.setAttribute('aria-live', 'polite');
+    pageIndicator.setAttribute('role', 'status');
+    
+    // 更新按钮状态和ARIA
+    prevBtn.disabled = currentIndex === 0;
+    prevBtn.setAttribute('aria-label', currentIndex === 0 ? '已到第一页' : '上一页');
+    
+    nextBtn.disabled = currentIndex === totalPages - 1;
+    nextBtn.setAttribute('aria-label', currentIndex === totalPages - 1 ? '已到最后一页' : '下一页');
+  } else {
+    pagination.style.display = 'none';
+  }
+}
+
+/**
+ * 更新进度指示器
+ */
+function updateProgressIndicator() {
+  const indicator = document.getElementById('progressIndicator');
+  const totalPages = PreviewState.pages.length;
+  
+  if (totalPages <= 1) {
+    indicator.style.display = 'none';
+    return;
+  }
+  
+  indicator.style.display = 'flex';
+  indicator.innerHTML = '';
+  
+  PreviewState.pages.forEach((_, index) => {
+    const dot = document.createElement('div');
+    dot.className = 'progress-dot';
+    if (index === PreviewState.currentPageIndex) {
+      dot.classList.add('active');
+    }
+    indicator.appendChild(dot);
+  });
+}
+
+/**
  * 显示预览模式（统一入口）
  */
 function showPreview(data, isBatch) {
@@ -1013,10 +1126,11 @@ function showPreview(data, isBatch) {
   // 绑定事件监听器（仅首次初始化）
   initPreviewListeners();
   
+  // 渲染页面
+  renderPages(PreviewState.pages);
+  
   // 显示预览容器
   document.getElementById('previewMode').style.display = 'flex';
-  
-  // TODO: Phase 2 - 实现渲染逻辑
 }
 
 /**
@@ -1046,19 +1160,23 @@ function exportCurrentPage() {
 }
 
 /**
- * 上一页（占位函数）
+ * 上一页
  */
 function prevPage() {
-  // TODO: Phase 3 - 实现翻页逻辑
-  console.log('Previous page');
+  if (PreviewState.currentPageIndex > 0) {
+    PreviewState.currentPageIndex--;
+    updatePagePosition();
+  }
 }
 
 /**
- * 下一页（占位函数）
+ * 下一页
  */
 function nextPage() {
-  // TODO: Phase 3 - 实现翻页逻辑
-  console.log('Next page');
+  if (PreviewState.currentPageIndex < PreviewState.pages.length - 1) {
+    PreviewState.currentPageIndex++;
+    updatePagePosition();
+  }
 }
 
 /**
