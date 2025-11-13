@@ -36,49 +36,64 @@
 
 ---
 
-## Phase 2: 统一预览模式 ⏳ NOT STARTED
+## Phase 2: 统一预览模式 ✅ COMPLETED
 
 **目标**: 实现单页/批量通用的阅读器组件
 
-- [ ] **Task 2.1**: 统一渲染逻辑
-  - 文件: `public/app.js`
-  - 函数: `showPreview(data, isBatch)`, `renderPages(pages)`
+- [x] **Task 2.1**: 统一渲染逻辑
+  - 文件: `public/app.js:1002-1029`
+  - 函数: `renderPages(pages)`, `updatePagePosition()`
+  - 实现: DOMPurify.sanitize(marked.parse()) 防XSS
   - ✅ **Acceptance**:
     - 单页数据自动包装成数组
     - Markdown正确渲染为HTML
     - 标题、段落、代码块样式正常
 
-- [ ] **Task 2.2**: 工具栏样式
-  - 文件: `public/style.css`
-  - 添加: `.preview-toolbar`, `.close-btn`, `.title`, `.pagination`
+- [x] **Task 2.2**: 工具栏样式
+  - 文件: Phase 1已完成
   - ✅ **Acceptance**:
     - 工具栏固定顶部，60px高度
     - Apple字体系统生效（-apple-system）
     - 毛玻璃效果在Safari生效
 
-- [ ] **Task 2.3**: 内容区域样式
-  - 文件: `public/style.css`
+- [x] **Task 2.3**: 内容区域样式
+  - 文件: `public/styles.css:770-793`
   - 添加: `.preview-content`, `.page-wrapper`, `.page-inner`
   - ✅ **Acceptance**:
     - 内容最大宽度680px（可读性最优）
     - 行高1.7，字号18px
     - 上下内边40px
 
-- [ ] **Task 2.4**: Markdown排版样式
-  - 文件: `public/style.css`
-  - 添加: `.page-inner h1/h2/p/code/pre`
+- [x] **Task 2.4**: Markdown排版样式
+  - 文件: `public/styles.css:795-940`
+  - 添加: h1-h6/p/ul/ol/code/pre/blockquote/a/img/table/hr
+  - 修复: 颜色变量(var(--color-text-primary)), 段落间距(30px), h4-h6层级
   - ✅ **Acceptance**:
-    - h1: 42px, 600字重
-    - p: 18px, 1.7行高
-    - code: 等宽字体，浅灰背景
+    - h1: 42px, 600字重, 移动端32px
+    - p: 18px, 1.7行高, 30px间距
+    - code: 15px等宽字体(修正P1建议), 浅灰背景
 
-- [ ] **Task 2.5**: 工具栏更新逻辑
-  - 文件: `public/app.js`
-  - 函数: `updateToolbar(totalPages)`
+- [x] **Task 2.5**: 工具栏更新逻辑
+  - 文件: `public/app.js:1056-1090`
+  - 函数: `updateToolbar()`, `updateProgressIndicator()`
+  - ARIA: aria-label(标题), aria-live(页码), role="status"
   - ✅ **Acceptance**:
     - 标题显示当前页面标题
     - 批量模式显示页码 `2 / 5`
     - 单页模式隐藏翻页控件
+    - 完整无障碍访问支持
+
+**额外交付**:
+- ✅ DOMPurify@3.0.8 XSS防护 (SRI校验)
+- ✅ 进度指示器样式 (GPU加速优化)
+- ✅ 翻页逻辑实现 (prevPage/nextPage)
+- ✅ 响应式移动端适配 (768px断点)
+- ✅ 性能优化 (will-change, contain, visibility)
+
+**Commit**: `dfa1d58` - feat: implement unified preview mode with Markdown rendering
+
+**设计评审**: APPROVED (修复3个P0问题后)  
+**代码评审**: APPROVED (修复XSS问题后)
 
 ---
 
@@ -330,12 +345,12 @@ code public/index.html public/app.js public/style.css
 ## Progress Tracking
 
 **Total Tasks**: 25 (Phase 1-5 + Tests)  
-**Completed**: 3 (Task 1.1-1.3)  
+**Completed**: 8 (Task 1.1-1.3, Task 2.1-2.5)  
 **In Progress**: 0  
-**Not Started**: 22
+**Not Started**: 17
 
 **Estimated Time**: 3 hours  
-**Time Spent**: 0.5 hours (Phase 1完成)
+**Time Spent**: 1.17 hours (Phase 1: 0.5h, Phase 2: 0.67h)
 
 ---
 
