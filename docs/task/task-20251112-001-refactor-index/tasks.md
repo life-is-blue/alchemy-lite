@@ -1,27 +1,38 @@
 # Firecrawl Lite - Safari式统一预览模式 - Task Checklist
 
-## Phase 1: 基础结构 ⏳ NOT STARTED
+## Phase 1: 基础结构 ✅ COMPLETED
 
 **目标**: 创建预览模式容器和基础逻辑
 
-- [ ] **Task 1.1**: 添加marked.js CDN引用
-  - 文件: `public/index.html`
-  - 位置: `<head>`部分
-  - 代码: `<script src="https://cdn.jsdelivr.net/npm/marked@11/marked.min.js"></script>`
+- [x] **Task 1.1**: 添加marked.js CDN引用
+  - 文件: `public/index.html:8-10`
+  - 版本: `marked@11.0.0` (固定版本)
+  - SRI: `sha384-4Tu0AVV0VM7dUwfPXGZDt6OI+2sNBSrQZe1Gmz87gzoio1n3IeHCMwRrfqSi4/Oh`
   - ✅ **Acceptance**: 浏览器Console无加载错误
 
-- [ ] **Task 1.2**: 创建预览模式HTML结构
-  - 文件: `public/index.html`
-  - 位置: `</body>`前
+- [x] **Task 1.2**: 创建预览模式HTML结构
+  - 文件: `public/index.html:124-169`
   - 包含: 统一工具栏、内容区域、进度指示器
+  - 语义化: `<header>` + `<nav>` + ARIA属性
   - ✅ **Acceptance**: HTML结构添加成功，初始`display: none`
 
-- [ ] **Task 1.3**: 实现显示/隐藏逻辑
-  - 文件: `public/app.js`
-  - 函数: `showPreview(data, isBatch)`, `closePreview()`
+- [x] **Task 1.3**: 实现显示/隐藏逻辑
+  - 文件: `public/app.js:5-18, 978-1074`
+  - 命名空间: `PreviewState` (替代全局变量)
+  - 函数: `showPreview(data, isBatch)`, `closePreview()`, `initPreviewListeners()`
   - ✅ **Acceptance**: 
     - 点击关闭按钮 → 预览区隐藏，输入区恢复
-    - 状态正确重置（currentPageIndex = 0）
+    - 状态正确重置（PreviewState.reset()）
+    - 事件监听器使用BatchProcessor管理
+    - 防止重复初始化（PreviewState.initialized）
+
+**额外交付**:
+- ✅ 完整CSS样式 (`public/styles.css:583-748`, 166行)
+- ✅ 响应式适配 (@media 768px)
+- ✅ 无内存泄漏 (BatchProcessor集成)
+- ✅ 安全性 (SRI校验 + crossorigin)
+
+**Commit**: `dbf3d8e` - feat: add preview mode structure and marked.js integration
 
 ---
 
@@ -319,12 +330,12 @@ code public/index.html public/app.js public/style.css
 ## Progress Tracking
 
 **Total Tasks**: 25 (Phase 1-5 + Tests)  
-**Completed**: 0  
+**Completed**: 3 (Task 1.1-1.3)  
 **In Progress**: 0  
-**Not Started**: 25
+**Not Started**: 22
 
 **Estimated Time**: 3 hours  
-**Time Spent**: 0 hours
+**Time Spent**: 0.5 hours (Phase 1完成)
 
 ---
 
