@@ -7,11 +7,13 @@ const PreviewState = {
   pages: [],
   purifiedVersions: new Map(),
   initialized: false,
+  gestureListeners: [],
   
   reset() {
     this.currentPageIndex = 0;
     this.pages = [];
     this.purifiedVersions.clear();
+    unbindGestureEvents();
   }
 };
 
@@ -996,6 +998,11 @@ function initPreviewListeners() {
   if (prevBtn) BatchProcessor.addEventListener(prevBtn, 'click', prevPage);
   if (nextBtn) BatchProcessor.addEventListener(nextBtn, 'click', nextPage);
   
+  // 键盘导航
+  BatchProcessor.addEventListener(window, 'keydown', handlePreviewKeyDown);
+  
+  // 手势支持（移动端）- 在showPreview中根据页数条件绑定
+  
   PreviewState.initialized = true;
 }
 
@@ -1129,6 +1136,10 @@ function showPreview(data, isBatch) {
   // 渲染页面
   renderPages(PreviewState.pages);
   
+  // 绑定手势事件（批量模式）- 先解绑再绑定
+  unbindGestureEvents();
+  bindGestureEvents();
+  
   // 显示预览容器
   document.getElementById('previewMode').style.display = 'flex';
 }
@@ -1185,6 +1196,113 @@ function nextPage() {
 function handlePurifyToggle() {
   // TODO: Phase 5 - 实现AI提纯逻辑
   console.log('Purify toggle');
+}
+
+/**
+ * 键盘导航处理
+ */
+function handlePreviewKeyDown(e) {
+  // 仅在预览模式打开时响应
+  const previewMode = document.getElementById('previewMode');
+  if (previewMode.style.display !== 'flex') return;
+  
+  const totalPages = PreviewState.pages.length;
+  const currentIndex = PreviewState.currentPageIndex;
+  
+  // ESC键关闭预览（单页和批量都支持）
+  if (e.key === 'Escape') {
+    closePreview();
+    e.preventDefault();
+    return;
+  }
+  
+  // 翻页键仅批量模式有效
+  if (totalPages <= 1) return;
+  
+  if (e.key === 'ArrowLeft' && currentIndex > 0) {
+    prevPage();
+    e.preventDefault();
+  } else if (e.key === 'ArrowRight' && currentIndex < totalPages - 1) {
+    nextPage();
+    e.preventDefault();
+  }
+}
+
+/**
+ * 手势支持 - Touch事件处理
+ */
+let touchStartX = 0;
+let touchEndX = 0;
+let touchStartY = 0;
+let touchEndY = 0;
+
+function handleTouchStart(e) {
+  touchStartX = e.targetTouches[0].clientX;
+  touchStartY = e.targetTouches[0].clientY;
+}
+
+function handleTouchMove(e) {
+  touchEndX = e.targetTouches[0].clientX;
+  touchEndY = e.targetTouches[0].clientY;
+}
+
+function handleTouchEnd() {
+  const deltaX = touchStartX - touchEndX;
+  const deltaY = touchStartY - touchEndY;
+  
+  // 垂直滚动优先 - 计算滑动角度
+  const angle = Math.abs(Math.atan2(deltaY, deltaX) * 180 / Math.PI);
+  
+  // 如果角度接近垂直(60°-120°),优先处理为滚动
+  if (angle > 60 && angle < 120) {
+    return;
+  }
+  
+  // 响应式阈值(屏幕宽度的20%，但不少于50px，不超过150px)
+  const threshold = Math.max(50, Math.min(150, window.innerWidth * 0.2));
+  
+  if (deltaX > threshold) {
+    // 向左滑动 → 下一页
+    nextPage();
+  } else if (deltaX < -threshold) {
+    // 向右滑动 → 上一页
+    prevPage();
+  }
+}
+
+/**
+ * 绑定/解绑手势事件
+ */
+function bindGestureEvents() {
+  const content = document.getElementById('previewContent');
+  if (!content) return;
+  
+  // 仅批量模式绑定手势
+  if (PreviewState.pages.length <= 1) return;
+  
+  // 先解绑旧手势
+  unbindGestureEvents();
+  
+  // 绑定新手势(手动管理,支持passive选项)
+  content.addEventListener('touchstart', handleTouchStart, { passive: true });
+  content.addEventListener('touchmove', handleTouchMove, { passive: true });
+  content.addEventListener('touchend', handleTouchEnd);
+  
+  // 手动注册到cleanup列表
+  PreviewState.gestureListeners = [
+    { element: content, event: 'touchstart', handler: handleTouchStart, options: { passive: true } },
+    { element: content, event: 'touchmove', handler: handleTouchMove, options: { passive: true } },
+    { element: content, event: 'touchend', handler: handleTouchEnd }
+  ];
+}
+
+function unbindGestureEvents() {
+  if (!PreviewState.gestureListeners || PreviewState.gestureListeners.length === 0) return;
+  
+  PreviewState.gestureListeners.forEach(({ element, event, handler, options }) => {
+    element.removeEventListener(event, handler, options);
+  });
+  PreviewState.gestureListeners = [];
 }
 
 // 页面加载时初始化
